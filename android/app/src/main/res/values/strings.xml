@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ======================================================================
+         app_name is the SINGLE SOURCE OF TRUTH for the display name.
+         Nothing may restate this string — notification channels,
+         window titles and log tags all resolve from it (see AppIdentity.kt).
+         The matching application ID lives in gradle.properties.
+         ====================================================================== -->
+    <string name="app_name">indexRouter</string>
+
+    <!-- Foreground service -->
+    <string name="fgs_channel_description">Keeps the webhook receiver running so voice notes are not lost.</string>
+    <string name="alerts_channel_description">Tells you when a voice note did not go where it should have.</string>
+    <string name="fgs_notification_title">%1$s is listening</string>
+    <string name="fgs_status_starting">Starting the receiver…</string>
+    <string name="fgs_status_listening">Listening on 127.0.0.1:%1$d</string>
+
+    <!-- Alerts: every one of these exists so a note never disappears quietly -->
+    <string name="alert_no_match_title">No rule matched</string>
+    <string name="alert_no_match_body">Filed to the inbox instead: “%1$s”</string>
+    <string name="alert_no_vault_title">Vault folder not available</string>
+    <string name="alert_no_vault_body">No access to “%1$s”. Add that folder to this app’s Storage Scopes, then the note can be filed.\n\n“%2$s”</string>
+    <string name="alert_route_failed_title">Routing failed</string>
+    <string name="alert_route_failed_body">“%1$s” — %2$s</string>
+    <string name="alert_timer_no_length_title">Timer not started</string>
+    <string name="alert_timer_no_length_body">No length found in “%1$s”. Try “timer for ten minutes”.</string>
+    <string name="alert_timer_tap_title">Tap to start a %1$s timer</string>
+    <string name="alert_timer_tap_body">%1$s</string>
+    <string name="alert_calendar_tap_title">Tap to add a calendar event</string>
+    <string name="alert_daily_note_created_title">Daily note created</string>
+    <string name="alert_daily_note_created_body">There was no note for today, so one was created at %1$s.</string>
+    <string name="alert_fallback_config_title">Using bundled default rules</string>
+    <string name="alert_fallback_config_body">The vault config could not be read (%1$s), so the built-in defaults are in use.</string>
+
+    <!-- Main screen -->
+    <string name="status_receiver_running">Receiver running: http://127.0.0.1:%1$d/webhook</string>
+    <string name="status_receiver_stopped">Receiver stopped — voice notes will be lost</string>
+    <string name="status_vault_granted">Vault: %1$s</string>
+    <string name="status_vault_missing">Vault folder not granted</string>
+    <string name="status_secret_set">Webhook secret is set</string>
+    <string name="status_secret_missing">No webhook secret — every request is rejected</string>
+    <string name="status_rules">%1$d routing rules</string>
+    <string name="status_last_synced">Last synced from vault: %1$s</string>
+    <string name="status_never_synced">Never synced from vault</string>
+    <string name="status_using_fallback">Running on bundled defaults</string>
+    <string name="status_background_launch_ok">Timers and calendar events fire directly</string>
+    <string name="status_background_launch_blocked">Timers and calendar events need a notification tap — grant “Display over other apps” to fire them directly</string>
+
+    <string name="action_base_folder">Base folder: %1$s</string>
+    <string name="base_folder_title">Where should the app keep its files?</string>
+    <string name="base_folder_body">One folder inside the vault holds everything this app writes: tasks, notes, recordings, its config and the maps. Nothing is written outside it.\n\nPick it in the next screen — use its New folder button if it does not exist yet.</string>
+    <string name="base_folder_choose">Choose folder</string>
+    <string name="base_folder_outside_vault">That folder is outside the vault (%1$s). Pick one inside it.</string>
+    <string name="base_folder_not_root">Pick a folder inside the vault, not the vault root itself.</string>
+    <string name="base_folder_set">Everything will be written under %1$s</string>
+    <string name="rule_folder_fixed">Fixed: %1$s</string>
+    <string name="rule_note_fallback_path">Unmatched recordings land in %1$s.</string>
+    <string name="action_grant_vault">Vault access</string>
+    <string name="action_generate_secret">Regenerate secret</string>
+    <string name="action_pebble_setup">Pebble app setup (URL + secret)</string>
+    <string name="action_rebuild_moc">Rebuild MoC tree</string>
+    <string name="moc_title">Rebuild the map of content</string>
+    <string name="moc_opt_maps">Rebuild the maps</string>
+    <string name="moc_opt_samples">Refresh the query samples</string>
+    <string name="moc_retention">Backups kept per map</string>
+    <string name="moc_nothing_chosen">Nothing chosen — tick at least one</string>
+    <string name="moc_ran">Wrote %1$d file(s), pruned %2$d old backup(s)</string>
+    <string name="moc_body">Regenerates an index note for every included folder, plus one at the top linking them together. Existing maps are backed up first.\n\nBackups kept per map:</string>
+    <string name="moc_rebuild">Rebuild</string>
+    <string name="moc_done">Wrote %1$d maps, pruned %2$d old backups</string>
+    <string name="moc_failed">Could not rebuild: %1$s</string>
+    <string name="moc_proforma">Write query files too</string>
+    <string name="action_reload">Reload from vault</string>
+    <string name="action_export">Export config to vault</string>
+    <string name="action_rules">Routing rules</string>
+    <string name="action_log">Routing log</string>
+    <string name="action_start_receiver">Start receiver</string>
+    <string name="action_stop_receiver">Stop receiver</string>
+    <string name="action_overlay_settings">Fix background launching</string>
+
+    <string name="setup_dialog_title">Pebble app setup</string>
+    <string name="setup_hint">In the Pebble app: Settings → Index → Webhooks. Set the trigger to double-click-hold, paste the URL, and add a header with the name and value below.</string>
+    <string name="setup_url_label">Webhook URL</string>
+    <string name="setup_secret_label">Header value (name: Authorization)</string>
+    <string name="action_copy_url">Copy URL</string>
+    <string name="action_copy_secret">Copy secret</string>
+    <string name="url_copied">URL copied to the clipboard</string>
+    <string name="secret_copied">Secret copied to the clipboard</string>
+    <string name="action_close">Close</string>
+    <string name="secret_regenerate_warning">Generating a new secret stops the current one working until you paste the new one into the Pebble app.</string>
+
+    <!-- Rules screen -->
+    <string name="rules_title">Routing rules</string>
+    <string name="rules_add">Add rule</string>
+    <string name="rule_fallback_pinned">Default · no keyword</string>
+    <string name="rule_folder_segment_only">Folder is a single name under %1$s — “%2$s” was shortened to “%3$s”.</string>
+    <string name="rule_folder_outside_base">That folder is outside %1$s. Rules can only write inside it.</string>
+    <string name="action_reset_defaults">Reset config to defaults</string>
+    <string name="reset_confirm_title">Reset config to defaults?</string>
+    <string name="reset_confirm_body">Replaces every routing rule with the bundled defaults and writes them to the vault. The old config file is backed up first. Notes already filed are not touched.</string>
+    <string name="reset_done">Config reset to defaults</string>
+    <string name="status_base_dir">Everything is written under %1$s</string>
+    <string name="alert_folders_renamed_title">Folders renamed</string>
+    <string name="alert_folders_renamed_body">%1$s. Those names were old defaults rather than choices, so they have been updated. Anything already filed stays where it is — move it across when convenient.</string>
+    <string name="alert_legacy_config_title">Config file is from an older version</string>
+    <string name="alert_legacy_config_body">%1$s was written before the folder change, so it was not loaded — its folder names meant something different. The bundled defaults are in use; set your rules up again and the file is rewritten.</string>
+    <string name="vault_reason_tasks">tasks</string>
+    <string name="rules_empty">No rules yet. Reload from the vault or add one.</string>
+
+    <!-- Field labels. Shown beside every input rather than as hint text, which
+         vanishes once a value is present and leaves an existing rule unreadable. -->
+    <string name="rule_keyword">Keywords</string>
+    <string name="rule_keyword_hint">blog idea, blog post</string>
+    <string name="rule_action">Type</string>
+    <string name="rule_folder">Folder</string>
+    <string name="rule_folder_hint">folder name</string>
+    <string name="rule_tags">Tags</string>
+    <string name="rule_tags_hint">tag, tag</string>
+    <string name="rule_priority">Priority</string>
+    <string name="rule_priority_hint">100</string>
+    <string name="rule_enabled">Enabled</string>
+    <string name="rule_choose_folder">Choose…</string>
+    <string name="rule_delete">Delete</string>
+    <string name="rule_save">Save</string>
+    <string name="rule_cancel">Cancel</string>
+    <string name="rule_summary">%1$s → %2$s</string>
+    <string name="rule_disabled_suffix">(disabled)</string>
+
+    <string name="rule_keyword_required">Give the rule at least one keyword</string>
+    <string name="rule_keyword_more">%1$s +%2$d more</string>
+    <string name="rule_keyword_duplicate">“%1$s” is already used by another rule</string>
+    <string name="rule_save_failed">Could not save: %1$s</string>
+    <string name="info_button">What is this?</string>
+    <string name="info_keyword_title">Keywords</string>
+    <string name="info_keyword_body">The words that make this rule fire. Enter several separated by commas — “blog idea, blog post idea, content idea” is one rule with three ways of saying the same thing.\n\nSpaces inside a phrase are fine; only commas separate.\n\nMatching is on whole words, so “task” does not fire on “multitasking”. Case and punctuation are ignored.</string>
+    <string name="info_action_title">Type</string>
+    <string name="info_action_body">What happens when the rule fires, and which of the fields below apply at all.\n\nFile writes a note into a folder. Task writes a task file into the task folder. Timer starts a timer in the clock app. Calendar opens a new event.\n\nTimer and Calendar write nothing to the vault, so they have no folder or tags.</string>
+    <string name="info_folder_title">Folder</string>
+    <string name="info_folder_body">A single folder name, created inside the app\'s base folder — not a path elsewhere in the vault. The app only ever writes inside its own folder.\n\nFor Task rules this is fixed: every task goes to the task folder.</string>
+    <string name="info_tags_title">Tags</string>
+    <string name="info_tags_body">Written into the note\'s frontmatter, not as inline hashtags, so Dataview and Metadata Menu can read them.\n\nOn a Task rule these override the default task tags, so a “work task” route and a “home task” route can carry different ones. Leave them as shown to inherit the default.</string>
+    <string name="info_priority_title">Priority</string>
+    <string name="info_priority_body">Which rule wins when one recording matches more than one. Lower runs first, and the first match is the one that fires.\n\nIf no recording ever matches two of your rules, this never matters.</string>
+    <string name="info_enabled_title">Enabled</string>
+    <string name="info_enabled_body">Switch a rule off to take it out of matching without deleting it. Recordings it would have caught fall through to the rules below, and then to the default route.</string>
+    <string name="rule_dialog_add">Add rule</string>
+    <string name="rule_dialog_edit">Edit rule</string>
+    <string name="rule_dialog_default">Default route (no keyword match)</string>
+    <string name="rule_note_file">Notes are filed into the folder, tagged in frontmatter.</string>
+    <string name="rule_note_task">Each task is written as its own file in the task folder. Folder and tags come from settings, so they are not set per rule.</string>
+    <string name="rule_note_timer">Fires a timer at the clock app. Nothing is written to the vault, so folder and tags do not apply.</string>
+    <string name="rule_note_calendar">Opens a calendar event. Nothing is written to the vault, so folder and tags do not apply.</string>
+    <string name="rule_note_default">Where a recording goes when no rule matches. It always runs, so there is no keyword or priority to set.</string>
+    <string name="rule_always_title">Recordings · always runs</string>
+    <string name="rule_always_subtitle">every recording → %1$s</string>
+    <string name="rule_default_title">Default</string>
+    <string name="rule_default_subtitle">no match → %1$s</string>
+    <string name="rule_folder_outside_vault">That folder is outside the vault (%1$s). Choose one inside it.</string>
+    <string name="rule_folder_needs_root">Set the vault root first, under Vault access.</string>
+
+    <!-- Log screen -->
+    <string name="log_title">Routing log</string>
+    <string name="log_empty">Nothing has come in yet.</string>
+    <string name="log_entry_routed">%1$s → %2$s</string>
+    <string name="log_entry_duration">%1$d ms</string>
+    <string name="log_entry_manual">re-routed by hand</string>
+    <string name="reroute_title">Send this somewhere else</string>
+    <string name="reroute_to_task">Tasks</string>
+    <string name="reroute_to_inbox">Inbox</string>
+    <string name="reroute_done">Moved to %1$s</string>
+    <string name="reroute_failed">Could not move it: %1$s</string>
+    <string name="reroute_no_file">That one wrote no file — a timer or calendar entry has nothing to move.</string>
+    <string name="log_entry_unmatched">no match → inbox</string>
+
+    <!-- Results -->
+    <string name="vault_access_title">Vault access</string>
+    <string name="vault_mode_files">File access (Storage Scopes)\nVault root: %1$s</string>
+    <string name="vault_mode_saf">Folder grant (SAF)\n%1$s</string>
+    <string name="vault_root_unset">not set</string>
+    <string name="vault_needs_all_files">No file access yet. On GrapheneOS use Storage Scopes — see File access below.</string>
+    <string name="file_access_title">File access</string>
+    <string name="file_access_body">On GrapheneOS, use Storage Scopes: App info → Permissions → Storage → Storage Scopes, then add the folders listed under Vault access.\n\nDo not grant “All files access” — Storage Scopes is only offered while the app holds no storage permission, so granting it removes the option.\n\nOn stock Android there is no Storage Scopes, and All files access is the only way to reach the vault by path.</string>
+    <string name="file_access_scopes">App info (Storage Scopes)</string>
+    <string name="file_access_all_files">All files access</string>
+    <string name="vault_folders_heading">Folders this setup needs:</string>
+    <string name="vault_folder_ok">✓ %1$s — %2$s</string>
+    <string name="vault_folder_blocked">✗ %1$s — %2$s (no access)</string>
+    <string name="vault_reason_config">config and backups</string>
+    <string name="vault_reason_audio">recordings</string>
+    <string name="vault_reason_inbox">unmatched notes</string>
+    <string name="vault_reason_rule">rule “%1$s”</string>
+    <string name="vault_choose_root">Choose vault root</string>
+    <string name="vault_open_permission">File permission</string>
+    <string name="action_vault_access">Vault access</string>
+    <string name="status_vault_blocked">%1$d folder(s) need Storage Scopes access</string>
+    <string name="rule_folder_blocked_title">That folder is not accessible</string>
+    <string name="rule_folder_blocked_body">The rule is saved, but “%1$s” is not in this app\'s Storage Scopes, so notes routed there cannot be written. Add it, then the rule works.</string>
+    <string name="rule_open_permission">Open file permission</string>
+
+    <string name="grant_nested_title">That is a folder inside the vault</string>
+    <string name="grant_nested_body">You granted “%1$s”, but the app writes to paths that start with “%1$s/” — so notes would land in %1$s/%1$s/. It also cannot see %2$s from there, so tasks could not reach your daily note.\n\nGrant the vault root instead. If you meant to grant only this folder, the paths can be adjusted to suit — but only file and audio routes will work.</string>
+    <string name="grant_missing_title">Cannot see the rest of the vault</string>
+    <string name="grant_missing_body">This folder has no “%1$s” in it, so tasks cannot reach your daily note and file routes cannot reach their folders. Grant the vault root — the folder that contains %1$s.</string>
+    <string name="grant_choose_again">Choose the vault root</string>
+    <string name="grant_adjust_paths">Keep it, adjust paths</string>
+    <string name="grant_use_anyway">Use it anyway</string>
+    <string name="grant_paths_adjusted">Paths adjusted: notes and audio now go directly inside %1$s</string>
+    <string name="status_grant_wrong_level">Vault grant looks wrong — tap “Grant vault folder”</string>
+
+    <string name="toast_reloaded">Loaded %1$d rules from the vault</string>
+    <string name="toast_exported">Config written to the vault</string>
+    <string name="toast_sync_failed">%1$s</string>
+
+    <string name="scaffold_status">%1$s\n\nApplication ID: %2$s</string>
+    <!-- Notification channels. One per route, because a sound is a channel
+         property on Android 8+ and not a per-notification one: "a different
+         alert per route" is only expressible as "a channel per route". -->
+    <string name="channel_group_routes">Routes</string>
+    <string name="channel_route">Route: %1$s</string>
+    <string name="channel_route_description">Fires when a recording is routed as %1$s. Pick its sound here.</string>
+    <string name="channel_route_fallback">Route: no match</string>
+    <string name="channel_route_fallback_description">Fires when a recording matched no rule and was filed to the inbox.</string>
+    <string name="channel_debug">Processing milestones</string>
+    <string name="channel_debug_description">Each step of handling a webhook, for working out why one did not do what was expected. Verbose.</string>
+
+    <string name="route_default_name">No match</string>
+    <string name="route_notify_title">%1$s route: “%2$s”</string>
+    <string name="route_notify_body">%1$s\n\n%2$s</string>
+    <string name="route_notify_no_file">No file written for this route.</string>
+
+    <!-- The debug stream. Stage names are deliberately the words used in the
+         pipeline, so a notification and a logcat line read the same. -->
+    <string name="debug_summary_title">Processing milestones</string>
+    <string name="debug_stage_received">1 · Webhook received</string>
+    <string name="debug_received_detail">Trigger %1$s · %2$d bytes of audio\n“%3$s”</string>
+    <string name="debug_stage_classified">2 · Classified</string>
+    <string name="debug_classified_detail">Matched “%1$s” → %2$s</string>
+    <string name="debug_classified_no_match">No rule matched — going to the inbox</string>
+    <string name="debug_stage_audio">3 · Recording saved</string>
+    <string name="debug_audio_none">No audio in this webhook</string>
+    <string name="debug_stage_dispatched">4 · Dispatched</string>
+    <string name="debug_dispatched_detail">%1$s · %2$s\n%3$s</string>
+    <string name="debug_stage_logged">5 · Logged</string>
+    <string name="debug_logged_detail">%1$s in %2$d ms</string>
+    <string name="debug_stage_rejected">Webhook rejected</string>
+
+    <!-- Notification settings -->
+    <string name="action_notifications">Notifications</string>
+    <string name="notify_title">Which routes notify</string>
+    <string name="notify_body">Tick a route to be told when it fires. Each has its own notification channel, so its sound is chosen in Android\'s notification settings for this app — not here.\n\nFailures always notify and are not listed: a recording that went nowhere must never pass quietly.</string>
+    <string name="notify_row_route">%1$s route</string>
+    <string name="notify_row_fallback">No match (filed to the inbox)</string>
+    <string name="notify_row_debug">Processing milestones (verbose)</string>
+    <string name="notify_open_channels">Sounds…</string>
+    <string name="notify_saved">Notification settings saved</string>
+    <!-- Compose UI -->
+    <string name="action_back">Back</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_settings">Settings</string>
+    <string name="log_no_transcript">(no transcript)</string>
+    <string name="info_content_description">About %1$s</string>
+    <string name="keyword_remove">Remove %1$s</string>
+    <string name="rule_label_keyword">Keywords</string>
+    <string name="rule_label_action">Type</string>
+    <string name="rule_label_folder">Folder</string>
+    <string name="rule_label_tags">Tags</string>
+    <string name="rule_label_priority">Priority</string>
+    <string name="rule_label_enabled">Enabled</string>
+    <string name="rule_tags_inherited">Inherited from the task tags setting until you set your own.</string>
+    <string name="rule_priority_label">priority %1$d</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_group_vault">Vault</string>
+    <string name="settings_group_folders">Folders</string>
+    <string name="settings_group_tasks">Tasks</string>
+    <string name="settings_group_notifications">Notifications</string>
+    <string name="settings_group_advanced">Advanced</string>
+    <string name="settings_group_config">Configuration file</string>
+    <string name="settings_vault_root">Vault root</string>
+    <string name="settings_vault_saf">Granted as a folder tree (not a plain path)</string>
+    <string name="settings_base_folder">Base folder</string>
+    <string name="settings_base_is_root">The granted folder itself</string>
+    <string name="settings_file_access">File access</string>
+    <string name="settings_file_access_subtitle">Storage Scopes, or all-files access</string>
+    <string name="settings_task_dir">Task folder</string>
+    <string name="settings_fallback_dir">Inbox folder</string>
+    <string name="settings_audio_dir">Recordings folder</string>
+    <string name="settings_reserved_body">A single folder name, created under the base folder. Anything already filed stays where it is — renaming here does not move it.</string>
+    <string name="settings_date_filing">Date filing</string>
+    <string name="settings_date_filing_body">How deeply the inbox and recordings are filed by date. Both take a file per recording and never lose one, so left flat they become unusable to browse.</string>
+    <string name="settings_date_none">Flat — no dated folders</string>
+    <string name="settings_date_month">By month — 2026/09</string>
+    <string name="settings_date_day">By day — 2026/09/18</string>
+    <string name="settings_task_tags">Task tags</string>
+    <string name="settings_task_tags_body">Comma separated. Written on every task unless a rule sets its own. #task is load-bearing: the daily note\'s queries filter on it.</string>
+    <string name="settings_task_created_date">Created date on tasks</string>
+    <string name="settings_task_created_date_sub">Appends the Tasks-plugin ➕ signifier</string>
+    <string name="settings_debug_sub">Every pipeline milestone as a notification. Verbose.</string>
+    <string name="settings_sounds_sub">Each route has its own channel — pick its sound in Android\'s settings</string>
+    <string name="settings_port">Server port</string>
+    <string name="settings_port_body">The loopback port the receiver binds. Changing it means changing the URL in the Pebble app too.</string>
+    <string name="settings_port_restart">Port changed — stop and start the receiver, and update the Pebble app\'s URL.</string>
+    <string name="settings_moc_retention">Map backups kept</string>
+    <string name="settings_retention_body">How many timestamped copies of each map to keep before the oldest is pruned.</string>
+    <string name="settings_reload_sub">Read the vault file and replace the rules held here</string>
+    <string name="settings_export_sub">Write what is held here back to the vault file</string>
+    <string name="settings_reset_sub">Discard the rules and start from the bundled defaults</string>
+    <!-- Voice input method -->
+    <string name="voice_subtype_label">Ring dictation</string>
+    <string name="voice_working">Fetching the last dictation…</string>
+    <string name="voice_committed">Committed: %1$s</string>
+    <string name="voice_nothing_dictated">Nothing on the dictation route yet. Say your dictation keyword first — other routes are deliberately not offered here.</string>
+    <string name="voice_too_old">The last dictation was %1$s ago, past the %2$d minute cutoff. Dictate again, or raise the cutoff in settings.</string>
+    <string name="voice_age_seconds">less than a minute</string>
+    <string name="voice_age_minutes">%1$d minutes</string>
+    <string name="voice_age_hours">%1$d hours</string>
+    <string name="settings_group_voice">Ring dictation (keyboard mic key)</string>
+    <string name="settings_voice_body">Tapping the mic key on your keyboard commits the ring\'s most recent transcription instead of listening. It has to be enabled once as an input method in Android\'s settings; it is never the system recogniser, so ordinary voice typing is untouched.</string>
+    <string name="settings_voice_enable">Enable as an input method</string>
+    <string name="settings_voice_enable_sub">Opens Android\'s on-screen keyboard settings</string>
+    <string name="settings_voice_cutoff">Dictation age cutoff</string>
+    <string name="settings_voice_cutoff_value">%1$d minutes</string>
+    <string name="settings_voice_cutoff_none">No cutoff — commit however old</string>
+    <string name="settings_voice_cutoff_body">How old the last dictation may be and still be committed. Without a cutoff, tapping the mic key hours later commits that morning\'s words into whatever field is focused.</string>
+    <string name="settings_voice_buffer">Transcriptions kept</string>
+    <string name="settings_voice_buffer_body">How many recent transcriptions the keyboard can reach. The newest is the one committed.</string>
+    <string name="voice_status_ready">✓ The mic key will reach this.</string>
+    <string name="voice_status_not_enabled">✗ Not enabled as an input method yet — the mic key cannot reach it.</string>
+    <string name="voice_status_not_reachable">✗ Enabled, but the system is not listing it as a voice input method, so the mic key cannot reach it.</string>
+    <string name="voice_status_not_first">✗ “%1$s” is ahead of this in the system\'s voice list, and the keyboard takes the first. Disable it to use the ring instead.</string>
+    <!-- Rule cards -->
+    <string name="rule_expand">Show keywords</string>
+    <string name="rule_collapse">Hide keywords</string>
+    <string name="rule_keywords_heading">Keywords:</string>
+    <string name="rule_add_keyword">add</string>
+    <string name="rule_keyword_overflow">+%1$d</string>
+    <string name="rule_no_keywords">No keywords yet — this rule cannot fire. Expand it to add one.</string>
+    <string name="rule_folder_select">Select</string>
+    <string name="rule_folder_choose_create">Choose / create…</string>
+    <string name="rule_recordings_label">Recordings folder</string>
+    <string name="rule_more">More…</string>
+    <string name="rule_more_title">Rule options</string>
+    <string name="rule_more_explanations">What each field does</string>
+    <string name="rule_label_match_type">Matching</string>
+    <string name="rule_label_include_moc">Include in the generated map</string>
+    <string name="match_contains_word">Whole word anywhere in the transcript</string>
+    <string name="match_starts_with">Only at the start of the transcript</string>
+    <string name="match_contains_substring">Anywhere, even inside another word</string>
+    <string name="info_match_title">Matching</string>
+    <string name="info_match_body">How a keyword is compared against what was said. Whole word is the default and the only one that behaves sanely on speech: matching anywhere inside another word fires “task” inside “multitasking”.</string>
+    <string name="info_moc_title">Include in the generated map</string>
+    <string name="info_moc_body">Whether this rule\'s folder gets its own Map of Content note when you rebuild the map tree, and is linked from the top-level index. Turn it off for a folder nobody browses through an index.</string>
+    <string name="channel_action">%1$s: tap to fire</string>
+    <string name="channel_action_description">Fires when a %1$s route needs a tap because Android blocked the app from starting it directly. This one is how the action actually happens, so it is always on — grant \"Display over other apps\" to stop needing the tap.</string>
+    <string name="rule_reorder_handle">Hold and drag to reorder</string>
+    <string name="settings_file_access_granted">Granted</string>
+    <string name="settings_file_access_missing">Not granted</string>
+    <string name="settings_sounds_open">Open…</string>
+    <string name="settings_action_run">Run…</string>
+    <!-- Calendar route -->
+    <string name="settings_group_calendar">Calendar route</string>
+    <string name="settings_calendar_body">A new event carries only a title, so it lands in the next free slot. Sending the phrase to an app that parses language gets the date and time out of what was said.</string>
+    <string name="settings_calendar_mode">How to create the event</string>
+    <string name="settings_calendar_mode_body">A new event is standard and any calendar app can take it, but it carries no date or time. Sending the phrase hands the whole thing to one named app, whose own parser reads \"tomorrow at noon\" — at the cost of naming that app.</string>
+    <string name="settings_calendar_mode_insert">New event (any calendar app)</string>
+    <string name="settings_calendar_mode_share">Send the phrase to one app to parse</string>
+    <string name="settings_calendar_package">App to send the phrase to</string>
+    <string name="settings_calendar_package_body">The package name of the app whose parser reads the phrase. Named rather than chosen from a list on purpose: sharing plain text is offered by every messaging app, and a share sheet in front of a private voice note is one tap from sending it to a contact.</string>
+    <string name="settings_calendar_installed">✓ Installed — the phrase goes straight there, with no chooser.</string>
+    <string name="settings_calendar_missing">✗ Not installed — the route falls back to a plain new event.</string>
+    <!-- Privacy -->
+    <string name="content_withheld">(content hidden — turn on detailed content logging to see it here)</string>
+    <string name="settings_group_privacy">Privacy</string>
+    <string name="settings_privacy_body">What was said is kept in the routing log so a recording can be traced, and the log is the only place a dictation\'s words exist at all. These decide how long that lasts and whether notifications repeat it.</string>
+    <string name="settings_log_retention">Keep the log for</string>
+    <string name="settings_log_retention_body">Hours. Anything older is removed and a dated marker is left in its place. Zero keeps the log until you clear it, which is a diagnostic setting rather than an everyday one.\n\nThis does not touch your notes, tasks or recordings in the vault — those are meant to be there. A dictation writes nothing else, so this is the only control over it.</string>
+    <string name="settings_detailed_content">Detailed content logging</string>
+    <string name="settings_detailed_content_sub">Let notifications repeat what was said. Off by default — a notification carrying the words puts them on the lock screen.</string>
+    <string name="log_clear">Clear the log</string>
+    <string name="log_clear_confirm_title">Clear the routing log?</string>
+    <string name="log_clear_confirm_body">Everything in the log goes, and a dated marker is left in its place. Your notes, tasks and recordings in the vault are untouched.\n\nA dictation waiting for the keyboard is held here and nowhere else, so clearing now means the mic key has nothing to offer.</string>
+    <string name="log_cleared">Log cleared — %1$d entries removed</string>
+    <string name="rule_label_strip">Remove the keyword</string>
+    <string name="rule_strip_note">Only when it opens the phrase</string>
+    <string name="info_strip_title">Remove the keyword</string>
+    <string name="info_strip_body">Takes the word that fired this rule out of what gets written or handed on, so \"task call Fred\" becomes \"call Fred\".\n\nIt is only ever removed from the **start** of what was said. A keyword used mid-sentence is left alone — \"remind me about the task tomorrow\" keeps its words — so turning this on cannot eat the middle of a sentence.</string>
+</resources>

@@ -1,0 +1,28 @@
+# --- secrets (double-layered with ~/.gitignore_global) ---
+*_secrets*
+_secrets.env
+*.env
+!*.env.template
+
+# --- local artefacts ---
+logs/
+*.log
+build/
+
+# --- release signing key: never in any repository, on any branch ---
+keystore/
+*.jks
+*.keystore
+
+# --- Android / Gradle ---
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/

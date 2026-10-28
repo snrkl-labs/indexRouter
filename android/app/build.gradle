@@ -1,0 +1,126 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+    id 'com.google.devtools.ksp'
+}
+
+// Identity is read from gradle.properties — see the comment block there.
+// Do not inline either value anywhere else in the build or the source.
+def appApplicationId = project.property('indexrouter.applicationId')
+def appVersionCode   = project.property('indexrouter.versionCode') as Integer
+def appVersionName   = project.property('indexrouter.versionName')
+
+android {
+    // Kotlin source package / R class namespace. This is an internal code
+    // identifier, not a user-facing string, and is deliberately kept stable
+    // across any future rename so a rename does not churn every import.
+    namespace 'org.snrkl.indexrouter'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId appApplicationId
+        minSdk 29
+        targetSdk 34
+        versionCode appVersionCode
+        versionName appVersionName
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled false
+            // Deliberately no signingConfig: assembleRelease emits an UNSIGNED
+            // APK, and the release key is applied in a separate, interactive
+            // step, so its passphrase never reaches a build file, env var,
+            // CLI argument or log.
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            // Derived from applicationId so a rename does not need editing here.
+            def shortName = appApplicationId.tokenize('.').last()
+            // Release has no signingConfig on purpose, so say so in the filename:
+            // an unsigned APK that looks installable wastes a download and a
+            // confusing "App not installed" dialog.
+            def suffix = variant.buildType.name == 'release' ? 'release-unsigned' : variant.buildType.name
+            outputFileName = "${shortName}-v${appVersionName}-${suffix}.apk"
+        }
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // Schema JSON is version-controlled so database migrations are reviewable
+    // and testable, rather than being discovered on someone's phone.
+    ksp {
+        arg('room.schemaLocation', "$projectDir/schemas")
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/INDEX.LIST', 'META-INF/io.netty.versions.properties', 'META-INF/*.kotlin_module']
+        }
+    }
+}
+
+dependencies {
+    // Loopback webhook receiver. CIO engine: pure Kotlin/coroutines, no Netty,
+    // no servlet container — the smallest server that still parses multipart.
+    implementation 'io.ktor:ktor-server-core:2.3.12'
+    implementation 'io.ktor:ktor-server-cio:2.3.12'
+
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.1'
+
+    // Routing config lives in the vault as YAML the user can hand-edit.
+    // kaml gives typed parse/emit with usable error messages on a typo; a
+    // hand-rolled parser would not.
+    implementation 'com.charleskorn.kaml:kaml:0.61.0'
+
+    // Routing rules + the traceability log.
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    ksp 'androidx.room:room-compiler:2.6.1'
+
+    // SAF access to the vault tree.
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+    implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+
+    // Compose. The BOM fixes every Compose artefact to one tested set, so the
+    // individual libraries below carry no version of their own.
+    implementation platform('androidx.compose:compose-bom:2024.06.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-core'
+    implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'androidx.navigation:navigation-compose:2.7.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    // Pure-logic units (classifier, task-line formatting, path templating) are
+    // kept free of Android types so they are covered here, off-device.
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+}

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="1290" viewBox="0 0 1560 1290" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a6ea5"/>
+      <stop offset="100%" stop-color="#12263a"/>
+    </linearGradient>
+    <pattern id="checker" width="24" height="24" patternUnits="userSpaceOnUse">
+      <rect width="24" height="24" fill="#ffffff"/>
+      <rect width="12" height="12" fill="#e8e8e8"/>
+      <rect x="12" y="12" width="12" height="12" fill="#e8e8e8"/>
+    </pattern>
+    <clipPath id="maskCircle"><circle cx="216" cy="216" r="216"/></clipPath>
+    <clipPath id="maskSquircle"><rect x="0" y="0" width="432" height="432" rx="120"/></clipPath>
+    <clipPath id="maskRounded"><rect x="0" y="0" width="432" height="432" rx="56"/></clipPath>
+    <g id="mark" stroke-width="16" fill="none" stroke-linecap="round">
+      <circle cx="216" cy="172" r="52"/>
+      <path d="M216,224 L216,278 M216,278 L164,322 M216,278 L268,322"/>
+    </g>
+  </defs>
+
+  <rect width="1560" height="900" fill="#fbfbfd"/>
+  <text x="40" y="52" font-size="30" font-weight="bold" fill="#12263a">Adaptive launcher icon — what to draw in each layer</text>
+  <text x="40" y="84" font-size="18" fill="#4a5768">Three separate SVGs, each on the same 432 × 432 px canvas (108dp at xxxhdpi). The launcher crops every layer with a mask you do not control.</text>
+
+  <!-- ============ PANEL 1: BACKGROUND ============ -->
+  <g transform="translate(40,130)">
+    <text x="0" y="0" font-size="21" font-weight="bold" fill="#12263a">1 · Background — FULL BLEED</text>
+    <text x="0" y="26" font-size="15" fill="#4a5768">Colour or gradient, edge to edge. No logo.</text>
+
+    <g transform="translate(0,48)">
+      <rect width="432" height="432" fill="url(#bgGrad)"/>
+      <path d="M0,0 H432 V432 H0 Z M216,72 A144,144 0 1,0 216,360 A144,144 0 1,0 216,72"
+            fill="#c62828" fill-opacity="0.6" fill-rule="evenodd"/>
+      <circle cx="216" cy="216" r="144" fill="none" stroke="#ffffff" stroke-width="3" stroke-dasharray="10 8"/>
+      <rect width="432" height="432" fill="none" stroke="#12263a" stroke-width="2"/>
+      <text x="216" y="34" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">paint all 432 × 432 px</text>
+      <text x="216" y="410" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">red = thrown away by the mask</text>
+    </g>
+
+    <text x="0" y="512" font-size="15" fill="#4a5768">“Full bleed” = the colour reaches every edge, with</text>
+    <text x="0" y="534" font-size="15" fill="#4a5768">nothing meaningful near the corners.</text>
+  </g>
+
+  <!-- ============ PANEL 2: FOREGROUND ============ -->
+  <g transform="translate(540,130)">
+    <text x="0" y="0" font-size="21" font-weight="bold" fill="#12263a">2 · Foreground — MARK ONLY</text>
+    <text x="0" y="26" font-size="15" fill="#4a5768">Transparent. Mark sits inside the green circle.</text>
+
+    <g transform="translate(0,48)">
+      <rect width="432" height="432" fill="url(#checker)"/>
+      <path d="M0,0 H432 V432 H0 Z M72,72 H360 V360 H72 Z" fill="#c62828" fill-opacity="0.20" fill-rule="evenodd"/>
+      <use href="#mark" stroke="#12263a"/>
+      <circle cx="216" cy="216" r="132" fill="none" stroke="#2e7d32" stroke-width="3" stroke-dasharray="10 8"/>
+      <circle cx="216" cy="216" r="96" fill="none" stroke="#2e7d32" stroke-width="1.5" stroke-dasharray="4 6"/>
+      <rect width="432" height="432" fill="none" stroke="#12263a" stroke-width="2"/>
+      <text x="216" y="34" font-size="15" fill="#a01c1c" text-anchor="middle" font-weight="bold">72 px margin — no art here</text>
+      <text x="216" y="410" font-size="15" fill="#1b5e20" text-anchor="middle" font-weight="bold">264 px safe zone · 192 px minimum</text>
+    </g>
+
+    <text x="0" y="512" font-size="15" fill="#4a5768">Only the 264 px circle is guaranteed visible, and</text>
+    <text x="0" y="534" font-size="15" fill="#4a5768">the layer shifts during the launcher’s parallax.</text>
+  </g>
+
+  <!-- ============ PANEL 3: MONOCHROME ============ -->
+  <g transform="translate(1040,130)">
+    <text x="0" y="0" font-size="21" font-weight="bold" fill="#12263a">3 · Monochrome — SILHOUETTE</text>
+    <text x="0" y="26" font-size="15" fill="#4a5768">One flat colour on transparency. Optional.</text>
+
+    <g transform="translate(0,48)">
+      <rect width="432" height="432" fill="url(#checker)"/>
+      <use href="#mark" stroke="#000000"/>
+      <circle cx="216" cy="216" r="132" fill="none" stroke="#2e7d32" stroke-width="3" stroke-dasharray="10 8"/>
+      <rect width="432" height="432" fill="none" stroke="#12263a" stroke-width="2"/>
+      <text x="216" y="410" font-size="15" fill="#4a5768" text-anchor="middle">shape carries it, not colour</text>
+    </g>
+
+    <text x="0" y="512" font-size="15" fill="#4a5768">Android tints this from the wallpaper when</text>
+    <text x="0" y="534" font-size="15" fill="#4a5768">themed icons are switched on.</text>
+  </g>
+
+  <!-- ============ MASK PREVIEW STRIP ============ -->
+  <g transform="translate(40,730)">
+    <rect x="-16" y="-46" width="1496" height="150" rx="12" fill="#eef1f5"/>
+    <text x="0" y="-18" font-size="18" font-weight="bold" fill="#12263a">Background + foreground, under three launcher masks — the phone picks, not the app:</text>
+
+    <g transform="scale(0.2)">
+      <g clip-path="url(#maskCircle)">
+        <rect width="432" height="432" fill="url(#bgGrad)"/><use href="#mark" stroke="#ffffff"/>
+      </g>
+    </g>
+    <g transform="translate(120,0) scale(0.2)">
+      <g clip-path="url(#maskSquircle)">
+        <rect width="432" height="432" fill="url(#bgGrad)"/><use href="#mark" stroke="#ffffff"/>
+      </g>
+    </g>
+    <g transform="translate(240,0) scale(0.2)">
+      <g clip-path="url(#maskRounded)">
+        <rect width="432" height="432" fill="url(#bgGrad)"/><use href="#mark" stroke="#ffffff"/>
+      </g>
+    </g>
+
+    <text x="380" y="34" font-size="16" fill="#4a5768">Each mask keeps a different amount of the square. The background survives all three because it bleeds</text>
+    <text x="380" y="58" font-size="16" fill="#4a5768">to the edges; the mark survives because it stays inside the 264 px safe zone.</text>
+  </g>
+  <!-- ============ STATUS BAR ICON ============ -->
+  <g transform="translate(40,900)">
+    <rect x="-16" y="-30" width="1496" height="360" rx="12" fill="#fff6f2"/>
+    <text x="0" y="6" font-size="21" font-weight="bold" fill="#12263a">4 · Status bar icon — a different asset entirely, not the launcher icon shrunk</text>
+    <text x="0" y="34" font-size="16" fill="#4a5768">Android throws the colour away and tints the shape, so only the alpha channel survives. 24 × 24 dp, drawn as one flat colour on transparency.</text>
+
+    <!-- the 24dp canvas, drawn large -->
+    <g transform="translate(0,76)">
+      <rect width="240" height="240" fill="url(#checker)"/>
+      <path d="M0,0 H240 V240 H0 Z M10,10 H230 V230 H10 Z" fill="#c62828" fill-opacity="0.20" fill-rule="evenodd"/>
+      <rect x="10" y="10" width="220" height="220" fill="none" stroke="#2e7d32" stroke-width="2" stroke-dasharray="8 6"/>
+      <!-- example: a heavy, simplified mark -->
+      <g stroke="#000000" stroke-width="20" fill="none" stroke-linecap="round">
+        <circle cx="120" cy="105" r="45"/>
+        <path d="M120,150 L120,185"/>
+      </g>
+      <rect width="240" height="240" fill="none" stroke="#12263a" stroke-width="2"/>
+      <text x="120" y="-8" font-size="14" fill="#c62828" text-anchor="middle" font-weight="bold">1dp margin</text>
+      <text x="120" y="262" font-size="14" fill="#1b5e20" text-anchor="middle" font-weight="bold">22 × 22 safe box</text>
+    </g>
+
+    <!-- rendered at true size, tinted, as the status bar shows it -->
+    <g transform="translate(300,76)">
+      <text x="0" y="-8" font-size="15" font-weight="bold" fill="#12263a">At true size, tinted by the system:</text>
+      <rect x="0" y="8" width="300" height="56" rx="6" fill="#12263a"/>
+      <g transform="translate(20,24) scale(1.0)">
+        <g stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round">
+          <circle cx="12" cy="10.5" r="4.5"/><path d="M12,15 L12,18.5"/>
+        </g>
+      </g>
+      <text x="52" y="42" font-size="13" fill="#c9d3de">9:41    ▾ status bar</text>
+      <text x="0" y="96" font-size="15" fill="#4a5768">The whole icon is 24dp — about the</text>
+      <text x="0" y="118" font-size="15" fill="#4a5768">height of the clock beside it. Detail that</text>
+      <text x="0" y="140" font-size="15" fill="#4a5768">reads on a launcher icon will not survive</text>
+      <text x="0" y="162" font-size="15" fill="#4a5768">here: simplify the mark, do not scale it.</text>
+    </g>
+
+    <g transform="translate(660,76)">
+      <text x="0" y="-8" font-size="15" font-weight="bold" fill="#12263a">Rules</text>
+      <text x="0" y="20" font-size="15" fill="#4a5768">· One flat colour on transparency — colour is discarded</text>
+      <text x="0" y="44" font-size="15" fill="#4a5768">· No gradients, no shadows: they flatten to a blob</text>
+      <text x="0" y="68" font-size="15" fill="#4a5768">· No embedded raster images — a vector drawable cannot carry them</text>
+      <text x="0" y="92" font-size="15" fill="#4a5768">· Strokes 2dp or heavier; anything finer disappears</text>
+      <text x="0" y="116" font-size="15" fill="#4a5768">· Artwork inside the central 22 × 22dp</text>
+      <text x="0" y="140" font-size="15" fill="#4a5768">· Ships in drawable/, not mipmap/ — one vector covers every density</text>
+      <text x="0" y="176" font-size="15" fill="#12263a" font-weight="bold">Template: ic_notification.template.svg</text>
+    </g>
+  </g>
+
+</svg>

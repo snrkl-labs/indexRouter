@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  background layer template — Index Router launcher icon.
+
+  Canvas is 432 x 432 px, which is 108dp at xxxhdpi. Every layer uses this
+  same canvas; scripts/generate-icons.sh renders the other densities from it.
+
+  FULL BLEED: paint colour to all four edges.
+  No logo here — corners get cut off.
+
+  DELETE the GUIDES group before exporting. Export as plain SVG, keeping the
+  432 x 432 canvas, to assets/icons/ic_launcher_background.svg
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 432 432">
+
+  <g id="ARTWORK">
+    <rect width="432" height="432" fill="#3a6ea5"/>
+  </g>
+
+  <g id="GUIDES" opacity="0.85" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+    <!-- 72 px reserved margin on every side: masking and parallax eat this -->
+    <path d="M0,0 H432 V432 H0 Z M72,72 H360 V360 H72 Z" fill="#c62828" fill-opacity="0.14" fill-rule="evenodd"/>
+    <!-- 264 px safe zone (66dp): the only area guaranteed to stay visible -->
+    <circle cx="216" cy="216" r="132" fill="none" stroke="#2e7d32" stroke-width="3" stroke-dasharray="10 8"/>
+    <!-- 192 px (48dp): smallest a mark should be -->
+    <circle cx="216" cy="216" r="96" fill="none" stroke="#2e7d32" stroke-width="1.5" stroke-dasharray="4 6"/>
+    <rect x="0.5" y="0.5" width="431" height="431" fill="none" stroke="#12263a" stroke-width="1"/>
+    <text x="216" y="24" font-size="14" fill="#c62828" text-anchor="middle">72 px margin — no art</text>
+    <text x="216" y="420" font-size="14" fill="#2e7d32" text-anchor="middle">264 px safe zone</text>
+  </g>
+
+</svg>

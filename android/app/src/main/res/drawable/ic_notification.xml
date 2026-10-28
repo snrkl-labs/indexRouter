@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status bar icon. Converted by hand from assets/icons/ic_notification.svg:
+  one path, transforms that are pure translate and scale, no gradients and no
+  raster images — which is what makes a vector drawable possible at all.
+
+  fillColor is white because Android uses only the alpha channel here and tints
+  the shape itself; the colour is never seen.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <group android:translateX="-482">
+        <group
+            android:scaleX="2.153292"
+            android:scaleY="2.138766"
+            android:translateX="-574.004257"
+            android:translateY="-16.786962">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:fillType="evenOdd"
+                android:pathData="M492.596,10.233L492.596,9.239C492.596,8.929 492.846,8.678 493.154,8.678L498.82,8.678C499.128,8.678 499.378,8.929 499.378,9.239L499.378,10.233C500.382,11.153 501.012,12.476 501.012,13.944C501.012,16.718 498.761,18.972 495.987,18.972C493.212,18.972 490.962,16.718 490.962,13.944C490.962,12.476 491.592,11.153 492.596,10.233ZM498.466,10.925C498.565,11.007 498.262,10.8 498.262,10.49L498.262,9.801L493.712,9.801L493.712,10.49C493.716,10.678 493.643,10.821 493.508,10.925C492.635,11.641 492.078,12.728 492.078,13.944C492.078,16.1 493.83,17.849 495.987,17.849C498.143,17.849 499.896,16.1 499.896,13.944C499.896,12.728 499.338,11.641 498.466,10.925ZM495.473,14.476L494.495,13.492L494.174,13.815L493.596,12.069L495.331,12.651L495.009,12.974L495.987,13.959L496.964,12.974L496.643,12.651L498.378,12.069L497.8,13.815L497.478,13.492L496.501,14.476L497.478,15.46L497.8,15.137L498.378,16.884L496.643,16.301L496.964,15.978L495.987,14.994L495.009,15.978L495.331,16.301L493.596,16.884L494.174,15.137L494.495,15.46L495.473,14.476Z" />
+        </group>
+    </group>
+
+</vector>

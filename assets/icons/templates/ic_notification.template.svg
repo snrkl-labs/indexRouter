@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Status bar icon template — Index Router.
+
+  Canvas is 24 x 24 (dp). This is NOT a small launcher icon: Android throws away
+  the colour data and tints the shape, so only the alpha channel survives. Draw
+  one flat colour on transparency, no gradients, no shadows, no embedded images.
+
+  Keep artwork inside the dashed 22 x 22 box, and keep strokes at 2 or more —
+  anything finer vanishes at this size. The launcher mark's fine detail will not
+  survive being scaled down; simplify it rather than shrinking it.
+
+  DELETE the GUIDES group before exporting, to
+  assets/icons/ic_notification.svg
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+
+  <g id="ARTWORK" fill="#000000">
+    <!-- draw the silhouette here: solid shapes, or strokes of 2 or more -->
+  </g>
+
+  <g id="GUIDES" opacity="0.9">
+    <rect x="1" y="1" width="22" height="22" fill="none" stroke="#2e7d32"
+          stroke-width="0.5" stroke-dasharray="1.5 1"/>
+    <rect x="0.15" y="0.15" width="23.7" height="23.7" fill="none"
+          stroke="#c62828" stroke-width="0.3"/>
+  </g>
+
+</svg>
