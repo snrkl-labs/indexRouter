@@ -2,10 +2,10 @@
 
 # indexRouter
 
-An Android companion for the **Pebble Index 01** ring. Double-click-hold the
-ring, say what you want, and indexRouter files it where it belongs: a note in
-your Obsidian vault, a task, a timer, a calendar event, or text for your
-keyboard to type.
+An Android companion for the **Pebble Index 01** ring. Click-hold or
+double-click-hold the ring, say what you want, and indexRouter files it where
+it belongs: a note in your Obsidian vault, a task, a timer, a calendar event,
+or text for your keyboard to type.
 
 It works through the Pebble app's **webhook** feature. The Pebble app records
 and transcribes; indexRouter receives the result on the phone itself, matches
