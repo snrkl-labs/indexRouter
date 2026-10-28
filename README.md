@@ -14,6 +14,8 @@ the first words against a keyword routing table you edit, and acts on it.
 **Everything stays on the phone.** The receiver binds `127.0.0.1` only, every
 request must carry a shared secret, and nothing is sent anywhere else.
 
+<img src="screenshots/main.png" width="220" alt="Main screen: receiver running, vault granted, secret set"> <img src="screenshots/rules.png" width="220" alt="Routing rules, each a type, a priority and its keywords"> <img src="screenshots/rule-expanded.png" width="220" alt="A rule opened up: folder, keywords, tags and keyword stripping">
+
 ## What it can do with a recording
 
 Each rule in the routing table pairs one or more keywords with an action:
@@ -43,6 +45,8 @@ recording is never lost silently.
 - **The routing table lives in your vault** as a Markdown file you can edit by
   hand, which also makes it the backup: reinstall, grant the folder, and the
   rules come back.
+
+<img src="screenshots/routing-log.png" width="220" alt="The routing log: what was said, which rule caught it, and where it went"> <img src="screenshots/settings-privacy.png" width="220" alt="Privacy, calendar route and ring dictation settings">
 
 ## Requirements
 
@@ -105,6 +109,8 @@ will not update across signing keys. Uninstall the old build first.
    dictation instead of listening.
 
 Then edit the routing table to suit.
+
+<img src="screenshots/pebble-setup.png" width="220" alt="The URL and secret to paste into the Pebble app (the secret shown is a throwaway)"> <img src="screenshots/settings-vault.png" width="220" alt="Vault settings, with a checklist of the folders this setup needs">
 
 ## Build from source
 
