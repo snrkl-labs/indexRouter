@@ -97,8 +97,9 @@ will not update across signing keys. Uninstall the old build first.
 2. **Generate a webhook secret** in the app. It is stored encrypted under an
    Android Keystore key, and shown so you can copy it.
 3. **In the Pebble app:** Settings → Index → Webhooks. Set the trigger to
-   double-click-hold, paste `http://127.0.0.1:8787/webhook` as the URL, and add
-   an `Authorization` header with the secret as its value.
+   click-hold, double-click-hold, or both, paste
+   `http://127.0.0.1:8787/webhook` as the URL, and add an `Authorization`
+   header with the secret as its value.
 4. **On GrapheneOS**, grant both apps the Network permission: it governs
    loopback traffic too.
 5. **For timers and calendar events to fire directly**, grant "Display over
