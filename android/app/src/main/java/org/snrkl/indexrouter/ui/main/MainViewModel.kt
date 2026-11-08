@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.snrkl.indexrouter.IndexRouterApp
+import org.snrkl.indexrouter.R
+import org.snrkl.indexrouter.data.config.ConfigRepository
 import org.snrkl.indexrouter.Timing
 import org.snrkl.indexrouter.action.ActivityLauncher
 import org.snrkl.indexrouter.data.db.LogKeeper
@@ -16,6 +18,7 @@ import org.snrkl.indexrouter.moc.MocGenerator
 import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.service.RouterForegroundService
 import org.snrkl.indexrouter.ui.common.VaultFolders
+import org.snrkl.indexrouter.ui.theme.groupSeeds
 
 /**
  * What the status screen shows.
@@ -44,7 +47,11 @@ internal data class VaultStatus(
     val lastSyncedAt: Long = 0L,
     val usingFallbackConfig: Boolean = false,
     val commonStale: Boolean = false,
-)
+    val syncError: String? = null,
+) {
+    /** Something about this vault's config file wants the user's attention. */
+    val needsSync: Boolean get() = assigned && (lastSyncedAt == 0L || commonStale || syncError != null)
+}
 
 internal class MainViewModel(private val app: Application) : ViewModel() {
 
@@ -98,6 +105,7 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
                         lastSyncedAt = profile.lastSyncedAt,
                         usingFallbackConfig = profile.usingFallbackConfig,
                         commonStale = profile.commonStale,
+                        syncError = profile.lastSyncError,
                     )
                 }
             }
@@ -139,6 +147,19 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
         }
     }
 
+    /** Reads, then writes if needed, one gesture's config file; says how it went. */
+    fun syncNow(group: RuleGroup) {
+        viewModelScope.launch {
+            val name = container.settings.groupName(group)
+            _messages.value = when (val result = container.config.syncNow(group)) {
+                is ConfigRepository.SyncResult.Loaded -> app.getString(R.string.toast_synced, name)
+                is ConfigRepository.SyncResult.Fallback -> app.getString(R.string.toast_sync_failed_named, name, result.reason)
+                is ConfigRepository.SyncResult.Failed -> app.getString(R.string.toast_sync_failed_named, name, result.reason)
+            }
+            refresh()
+        }
+    }
+
     /** The user's answer when a vault's common rules differ from the app's. */
     fun resolveCommonConflict(useVault: Boolean) {
         viewModelScope.launch {
@@ -150,6 +171,8 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
     val commonConflict get() = container.config.commonConflict
 
     fun groupName(group: RuleGroup): String = container.settings.groupName(group)
+
+    fun groupSeeds(): Map<RuleGroup, Int> = container.settings.groupSeeds()
 
     fun toggleReceiver() {
         val settings = container.settings

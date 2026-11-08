@@ -56,6 +56,8 @@ import org.snrkl.indexrouter.ui.common.CardValueRow
 import org.snrkl.indexrouter.ui.common.OnResume
 import org.snrkl.indexrouter.ui.common.OutlinedCard
 import org.snrkl.indexrouter.ui.common.SettingCard
+import org.snrkl.indexrouter.ui.theme.GroupColor
+import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 
 /**
  * Everything that configures rather than reports.
@@ -101,6 +103,9 @@ internal fun SettingsScreen(
     // which reads as the fix not having worked.
     OnResume { viewModel.refresh(hasAllFilesAccess()) }
 
+    val groupColors = rememberGroupColors(state.groupSeeds)
+    val gestureColor = groupColors[state.group]
+
     val conflict by viewModel.commonConflict.collectAsStateWithLifecycle()
     conflict?.let {
         CommonConflictDialog(
@@ -136,12 +141,15 @@ internal fun SettingsScreen(
             GestureSelector(
                 selected = state.group,
                 names = state.groupNames,
+                colors = groupColors,
                 onSelect = viewModel::selectGroup,
             )
 
             // The vault is granted, not chosen, so it takes the outlined card
-            // the rules screen uses for the things that are not choices.
-            OutlinedCard {
+            // the rules screen uses for the things that are not choices. Its
+            // border, and the two cards after it, wear the gesture's colour:
+            // everything down to the end of Tasks belongs to that gesture.
+            OutlinedCard(border = gestureColor?.accent ?: MaterialTheme.colorScheme.outline) {
                 Text(
                     text = stringResource(R.string.settings_group_vault),
                     style = MaterialTheme.typography.titleSmall,
@@ -170,28 +178,37 @@ internal fun SettingsScreen(
                         )
                     }
                 }
+                // The pill holds the vault's own name; a full path does not fit
+                // on one line and was being cut to its least useful part.
                 CardValueRow(
                     label = stringResource(R.string.settings_vault_root),
                     value = when (state.storageMode) {
-                        StorageMode.FILES -> state.vaultRoot ?: stringResource(R.string.vault_root_unset)
+                        StorageMode.FILES -> state.vaultRoot?.trimEnd('/')?.substringAfterLast('/')
+                            ?: stringResource(R.string.vault_root_unset)
                         StorageMode.SAF -> stringResource(R.string.settings_vault_saf)
                     },
                     onClick = onChooseVault,
+                    note = state.vaultRoot.takeIf { state.storageMode == StorageMode.FILES },
                 )
                 CardValueRow(
                     label = stringResource(R.string.settings_base_folder),
                     value = state.baseDir.ifBlank { stringResource(R.string.settings_base_is_root) },
                     onClick = onChooseBaseFolder,
                 )
+                // Storage Scopes grants access without "all files", so the
+                // permission alone says nothing; a vault whose folders all
+                // proved writable has access, whatever granted it.
+                val accessProven = state.requirements.isNotEmpty() && state.requirements.all { it.satisfied }
+                val accessMissing = state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess && !accessProven
                 CardValueRow(
                     label = stringResource(R.string.settings_file_access),
-                    value = if (state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess) {
+                    value = if (accessMissing) {
                         stringResource(R.string.settings_file_access_missing)
                     } else {
                         stringResource(R.string.settings_file_access_granted)
                     },
                     onClick = onOpenFileAccess,
-                    note = if (state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess) {
+                    note = if (accessMissing) {
                         stringResource(R.string.vault_needs_all_files)
                     } else {
                         null
@@ -205,7 +222,11 @@ internal fun SettingsScreen(
                 }
             }
 
-            SettingCard(stringResource(R.string.settings_group_folders)) {
+            SettingCard(
+                title = stringResource(R.string.settings_group_folders),
+                container = gestureColor?.container ?: MaterialTheme.colorScheme.secondaryContainer,
+                onContainer = gestureColor?.onContainer ?: MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
                 CardValueRow(
                     label = stringResource(R.string.settings_task_dir),
                     value = state.taskDir,
@@ -228,7 +249,11 @@ internal fun SettingsScreen(
                 )
             }
 
-            SettingCard(stringResource(R.string.settings_group_tasks)) {
+            SettingCard(
+                title = stringResource(R.string.settings_group_tasks),
+                container = gestureColor?.container ?: MaterialTheme.colorScheme.secondaryContainer,
+                onContainer = gestureColor?.onContainer ?: MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
                 CardValueRow(
                     label = stringResource(R.string.settings_task_tags),
                     value = state.taskTags,
@@ -697,6 +722,7 @@ private fun bodyFor(setting: TextSetting) = when (setting) {
 private fun GestureSelector(
     selected: RuleGroup,
     names: Map<RuleGroup, String>,
+    colors: Map<RuleGroup, GroupColor>,
     onSelect: (RuleGroup) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -711,6 +737,13 @@ private fun GestureSelector(
                     selected = group == selected,
                     onClick = { onSelect(group) },
                     shape = SegmentedButtonDefaults.itemShape(index, RuleGroup.TRIGGERS.size),
+                    colors = colors[group]?.let { c ->
+                        SegmentedButtonDefaults.colors(
+                            activeContainerColor = c.container,
+                            activeContentColor = c.onContainer,
+                            inactiveContentColor = c.onContainer,
+                        )
+                    } ?: SegmentedButtonDefaults.colors(),
                 ) {
                     Text(names[group] ?: group.defaultName, maxLines = 1)
                 }

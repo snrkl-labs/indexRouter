@@ -79,6 +79,14 @@ class VaultProfile internal constructor(
         get() = prefs.getBoolean(key(KEY_COMMON_STALE), false)
         set(value) = prefs.edit { putBoolean(key(KEY_COMMON_STALE), value) }
 
+    /**
+     * Why the last read or write of this vault's config file failed, or null
+     * if it succeeded. Kept so the status card can say why, not only that.
+     */
+    var lastSyncError: String?
+        get() = prefs.getString(key(KEY_SYNC_ERROR), null)
+        set(value) = prefs.edit { if (value == null) remove(key(KEY_SYNC_ERROR)) else putString(key(KEY_SYNC_ERROR), value) }
+
     // ---- layout --------------------------------------------------------------
 
     /** Vault-relative root for everything this gesture writes. May have several segments. */
@@ -207,6 +215,7 @@ class VaultProfile internal constructor(
         const val KEY_LAST_SYNCED = "last_synced_at"
         const val KEY_FALLBACK = "using_fallback"
         const val KEY_COMMON_STALE = "common_stale"
+        const val KEY_SYNC_ERROR = "last_sync_error"
         const val KEY_BASE_DIR = "base_dir"
         const val KEY_BASE_CONFIRMED = "base_dir_confirmed"
         const val KEY_TASK_DIR = "task_dir"

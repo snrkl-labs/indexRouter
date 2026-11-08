@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -42,11 +44,16 @@ import androidx.compose.ui.unit.dp
 
 /** A titled group of settings, filled, in the rules-card tint. */
 @Composable
-internal fun SettingCard(title: String, content: @Composable () -> Unit) {
+internal fun SettingCard(
+    title: String,
+    container: Color = MaterialTheme.colorScheme.secondaryContainer,
+    onContainer: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    content: @Composable () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(16.dp))
+            .background(container, RoundedCornerShape(16.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -54,7 +61,7 @@ internal fun SettingCard(title: String, content: @Composable () -> Unit) {
             text = title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = onContainer,
             modifier = Modifier.padding(bottom = 4.dp),
         )
         content()
@@ -68,12 +75,15 @@ internal fun SettingCard(title: String, content: @Composable () -> Unit) {
  * settings it is the vault, which is granted rather than configured.
  */
 @Composable
-internal fun OutlinedCard(content: @Composable () -> Unit) {
+internal fun OutlinedCard(
+    border: Color = MaterialTheme.colorScheme.outline,
+    content: @Composable () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-            .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+            .border(2.dp, border, RoundedCornerShape(12.dp))
             .padding(12.dp),
     ) {
         content()
@@ -110,7 +120,12 @@ internal fun Pill(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(text = text, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (dropdown) Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp))
     }
 }

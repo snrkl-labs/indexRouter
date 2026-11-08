@@ -46,15 +46,28 @@ class FileVaultStore(private val root: File) : VaultStore {
             .orEmpty()
     }
 
+    /**
+     * Null only when there is no such file. A file that is there but cannot be
+     * read is an error, not an absence: treating it as absent is how a config
+     * this app may not open gets overwritten as though it were new.
+     */
     override fun readText(path: String): String? {
         val file = File(root, path)
-        return if (file.isFile && file.canRead()) file.readText() else null
+        if (!file.exists()) return null
+        if (!file.isFile || !file.canRead()) throw IOException("$path is there but this app cannot read it")
+        return file.readText()
     }
 
     override fun writeText(path: String, contents: String): String {
         val file = File(root, path)
         file.parentFile?.let { ensureFolder(it) }
-        file.writeText(contents)
+        try {
+            file.writeText(contents)
+        } catch (e: IOException) {
+            // The system's message names the absolute path and an errno; the
+            // vault-relative path is what the user can find.
+            throw IOException("cannot write $path (${e.message?.substringAfterLast(": ") ?: "denied"})", e)
+        }
         return path
     }
 

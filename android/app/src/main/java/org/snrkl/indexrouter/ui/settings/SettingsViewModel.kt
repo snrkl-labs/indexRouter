@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.snrkl.indexrouter.IndexRouterApp
+import org.snrkl.indexrouter.ui.theme.groupSeeds
 import org.snrkl.indexrouter.Timing
 import org.snrkl.indexrouter.R
 import org.snrkl.indexrouter.action.DateFiling
@@ -34,6 +35,7 @@ internal data class SettingsUiState(
     val carriedOverPath: String? = null,
     val vaultRoot: String? = null,
     val storageMode: StorageMode = StorageMode.FILES,
+    val groupSeeds: Map<RuleGroup, Int> = emptyMap(),
     val hasAllFilesAccess: Boolean = false,
     val baseDir: String = "",
     val taskDir: String = "",
@@ -127,6 +129,7 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
             _state.value = SettingsUiState(
                 group = vault.group,
                 groupNames = RuleGroup.entries.associateWith { settings.groupName(it) },
+                groupSeeds = settings.groupSeeds(),
                 vaultAssigned = vault.isAssigned,
                 carriedOverPath = settings.carriedOver?.let { it.vaultRootPath ?: it.vaultTreeUri?.toString() },
                 vaultRoot = vault.vaultRootPath,

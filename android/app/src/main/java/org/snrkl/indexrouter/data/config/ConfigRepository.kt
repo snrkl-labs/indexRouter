@@ -128,7 +128,24 @@ class ConfigRepository(
      * else is. The common copy is compared, not applied, unless the app has no
      * common rules of its own yet.
      */
-    suspend fun reloadFromVault(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun reloadFromVault(group: RuleGroup): SyncResult =
+        reloadFromVaultUnrecorded(group).also { recordSync(group, it) }
+
+    /**
+     * Remembers why a vault's file could not be read or written, or that it
+     * could. "No vault assigned" is not a failure of the file and is not kept.
+     */
+    private fun recordSync(group: RuleGroup, result: SyncResult) {
+        val profile = settings.profile(group)
+        if (!profile.isAssigned) return
+        profile.lastSyncError = when (result) {
+            is SyncResult.Loaded -> null
+            is SyncResult.Fallback -> result.reason
+            is SyncResult.Failed -> result.reason
+        }
+    }
+
+    private suspend fun reloadFromVaultUnrecorded(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
         val profile = settings.profile(group)
         val store = vaultStore(group)
             ?: return@withContext SyncResult.Fallback("no vault assigned")
@@ -246,7 +263,13 @@ class ConfigRepository(
      */
     suspend fun onVaultAssigned(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
         val profile = settings.profile(group)
-        val existing = vaultStore(group)?.let { runCatching { it.readText(profile.configPath()) }.getOrNull() }
+        val existing = try {
+            vaultStore(group)?.readText(profile.configPath())
+        } catch (t: Throwable) {
+            // There is a file, and it cannot be read. Writing a new one over it
+            // would lose whatever it holds, so stop and say so.
+            return@withContext SyncResult.Failed(t.message ?: "config file unreadable").also { recordSync(group, it) }
+        }
         if (existing != null) return@withContext reloadFromVault(group)
 
         if (rulesDao.all().none { it.groupId == group.wireName }) {
@@ -279,7 +302,10 @@ class ConfigRepository(
     }
 
     /** Writes one vault's file: its layout, its gesture's rules, and the common copy. */
-    suspend fun writeThroughToVault(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun writeThroughToVault(group: RuleGroup): SyncResult =
+        writeThroughUnrecorded(group).also { recordSync(group, it) }
+
+    private suspend fun writeThroughUnrecorded(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
         val profile = settings.profile(group)
         val store = vaultStore(group)
             ?: return@withContext SyncResult.Failed("no vault assigned")
@@ -325,6 +351,25 @@ class ConfigRepository(
             .forEach { profile ->
                 if (vaultStore(profile.group)?.isReady == true) writeThroughToVault(profile.group)
             }
+    }
+
+    /**
+     * The status card's "Sync now". A vault never read is read first, so a
+     * file that is already there — a reinstall, or one edited elsewhere — is
+     * taken in rather than overwritten. Then, if the vault has no file yet or
+     * its common copy is behind, it is written.
+     */
+    suspend fun syncNow(group: RuleGroup): SyncResult = withContext(Dispatchers.IO) {
+        val profile = settings.profile(group)
+        if (!profile.isAssigned) return@withContext SyncResult.Failed("no vault assigned")
+        var result: SyncResult? = null
+        if (profile.lastSyncedAt == 0L) {
+            result = reloadFromVault(group)
+            if (result is SyncResult.Failed) return@withContext result
+        }
+        val noFile = result is SyncResult.Fallback
+        if (profile.commonStale || noFile || result == null) result = writeThroughToVault(group)
+        result
     }
 
     /** Writes wherever an edit to [group]'s rules belongs. */

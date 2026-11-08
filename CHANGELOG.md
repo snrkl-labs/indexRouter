@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.19.1 — 2026-11-09
+
+### Added
+- **Sync now.** When a vault's config file has never been read, is behind on
+  the common rules, or failed its last read or write, the status screen says
+  why and offers **Sync now**. A file that is already in the vault is read
+  first, so it is taken in rather than overwritten; then the file is written
+  if it is missing or behind.
+
+### Changed
+- **Settings wear the selected gesture's colour.** The gesture selector, the
+  vault card's border and the Folders and Tasks cards use that gesture's colour,
+  and the status screen marks each gesture with it.
+
+### Fixed
+- **A config file the app cannot read is no longer treated as missing.** It is
+  reported, with its path, and left alone; before, the app could try to write a
+  fresh file over it. Write failures name the file too.
+- **The vault path is no longer cut off in settings.** The vault's name is
+  shown in the row, and the full path beneath it.
+- **File access reads Granted when the vault's folders are writable**, however
+  that access was given (Storage Scopes included), rather than only when the
+  app holds all-files access.
+
 ## v0.19.0 — 2026-11-08
 
 Fixes from the first day of using two vaults.

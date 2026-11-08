@@ -116,6 +116,21 @@ class FileVaultStoreTest {
     }
 
     @Test
+    fun `a file that is there but unreadable is an error, not an absence`() {
+        val (store, root) = store()
+        store.writeText("_RingRing/indexrouter-config.md", "kept")
+        val file = File(root, "_RingRing/indexrouter-config.md")
+        org.junit.Assume.assumeTrue("needs a non-root user", file.setReadable(false) && !file.canRead())
+        try {
+            val error = runCatching { store.readText("_RingRing/indexrouter-config.md") }.exceptionOrNull()
+            assertTrue("expected an IOException, got $error", error is java.io.IOException)
+            assertTrue(error!!.message!!.contains("_RingRing/indexrouter-config.md"))
+        } finally {
+            file.setReadable(true)
+        }
+    }
+
+    @Test
     fun `reading a file that is not there is not an error`() {
         val (vault, _) = store()
         assertEquals(null, vault.readText("_Daily Notes/2026/08/2026-08-18.md"))

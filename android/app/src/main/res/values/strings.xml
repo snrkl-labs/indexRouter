@@ -50,6 +50,10 @@
     <string name="status_receiver_running">Receiver running: http://127.0.0.1:%1$d/webhook</string>
     <string name="status_receiver_stopped">Receiver stopped — voice notes will be lost</string>
     <string name="status_vault_unassigned">No vault set for this gesture</string>
+    <string name="status_sync_error">Last sync failed: %1$s</string>
+    <string name="action_sync_now">Sync now</string>
+    <string name="toast_synced">%1$s: config file is up to date</string>
+    <string name="toast_sync_failed_named">%1$s: %2$s</string>
     <string name="status_common_stale">Common rules not yet written to this vault</string>
     <string name="common_conflict_title">Common rules differ</string>
     <string name="common_conflict_body">The common rules in the %1$s vault’s config file are not the same as the app’s. Which should be kept? The other copy is overwritten.</string>

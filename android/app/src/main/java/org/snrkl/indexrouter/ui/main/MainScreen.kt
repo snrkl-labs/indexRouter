@@ -1,5 +1,12 @@
 package org.snrkl.indexrouter.ui.main
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.ui.theme.GroupColor
+import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,6 +72,7 @@ internal fun MainScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val message by viewModel.messages.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val groupColors = rememberGroupColors(remember(state.vaults) { viewModel.groupSeeds() })
 
     var showMoc by remember { mutableStateOf(false) }
     var showSetup by remember { mutableStateOf(false) }
@@ -117,7 +125,7 @@ internal fun MainScreen(
                 }
             }
 
-            StatusCard(state)
+            StatusCard(state, groupColors, onSync = viewModel::syncNow)
 
             Button(
                 onClick = { viewModel.toggleReceiver() },
@@ -197,7 +205,11 @@ internal fun MainScreen(
 }
 
 @Composable
-private fun StatusCard(state: MainUiState) {
+private fun StatusCard(
+    state: MainUiState,
+    groupColors: Map<RuleGroup, GroupColor>,
+    onSync: (RuleGroup) -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -220,7 +232,7 @@ private fun StatusCard(state: MainUiState) {
                 ok = state.hasSecret,
             )
             StatusLine(stringResource(R.string.status_rules, state.ruleCount), ok = true)
-            state.vaults.forEach { vault -> VaultStatusLines(vault) }
+            state.vaults.forEach { vault -> VaultStatusLines(vault, groupColors[vault.group], onSync) }
             StatusLine(
                 text = if (state.canLaunchFromBackground) {
                     stringResource(R.string.status_background_launch_ok)
@@ -238,12 +250,26 @@ private fun StatusCard(state: MainUiState) {
  * nothing when there are two.
  */
 @Composable
-private fun VaultStatusLines(vault: VaultStatus) {
-    Text(
-        text = vault.name,
-        style = MaterialTheme.typography.titleSmall,
+private fun VaultStatusLines(vault: VaultStatus, color: GroupColor?, onSync: (RuleGroup) -> Unit) {
+    // The gesture's own colour, as on the rules and log screens, so "which
+    // vault is this" reads the same everywhere.
+    Row(
         modifier = Modifier.padding(top = 8.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (color != null) {
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(width = 6.dp, height = 18.dp)
+                    .background(color.accent, RoundedCornerShape(3.dp)),
+            )
+        }
+        Text(
+            text = vault.name,
+            style = MaterialTheme.typography.titleSmall,
+        )
+    }
     if (!vault.assigned) {
         StatusLine(stringResource(R.string.status_vault_unassigned), ok = false)
         return
@@ -275,6 +301,12 @@ private fun VaultStatusLines(vault: VaultStatus) {
     }
     if (vault.commonStale) {
         StatusLine(stringResource(R.string.status_common_stale), ok = false)
+    }
+    vault.syncError?.let { StatusLine(stringResource(R.string.status_sync_error, it), ok = false) }
+    if (vault.needsSync) {
+        TextButton(onClick = { onSync(vault.group) }) {
+            Text(stringResource(R.string.action_sync_now))
+        }
     }
 }
 
