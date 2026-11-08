@@ -309,6 +309,20 @@ class ConfigRepository(
         val profile = settings.profile(group)
         val store = vaultStore(group)
             ?: return@withContext SyncResult.Failed("no vault assigned")
+        // A file this app has never read is not overwritten: it may hold edits
+        // made elsewhere. It is read first (Sync now, or the next catch-up);
+        // until then the vault is only marked as behind.
+        if (profile.lastSyncedAt == 0L) {
+            val unread = try {
+                store.readText(profile.configPath()) != null
+            } catch (_: Throwable) {
+                true
+            }
+            if (unread) {
+                profile.commonStale = true
+                return@withContext SyncResult.Failed("this vault's config file has not been read yet — use Sync now")
+            }
+        }
         val all = rulesDao.all()
         val document = ConfigDocument(
             layout = profile.toLayout(),
@@ -344,12 +358,19 @@ class ConfigRepository(
         }
     }
 
-    /** Retries any vault whose common copy fell behind. Cheap when none has. */
+    /**
+     * Retries any vault whose common copy fell behind. Cheap when none has.
+     *
+     * A vault whose file has never been read is read first, through [syncNow]:
+     * writing the app's copy over a file nobody has looked at would put
+     * whatever was edited elsewhere into the backup folder, where nobody would
+     * think to look for it.
+     */
     suspend fun catchUpStaleVaults() = withContext(Dispatchers.IO) {
         settings.vaultProfiles
             .filter { it.isAssigned && it.commonStale }
             .forEach { profile ->
-                if (vaultStore(profile.group)?.isReady == true) writeThroughToVault(profile.group)
+                if (vaultStore(profile.group)?.isReady == true) syncNow(profile.group)
             }
     }
 

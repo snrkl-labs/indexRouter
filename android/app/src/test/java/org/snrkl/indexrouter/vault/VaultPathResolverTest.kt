@@ -55,4 +55,13 @@ class VaultPathResolverTest {
         assertNull(VaultPathResolver.toFilesystemPath("1A2B-3C4D:vault", root))
         assertNull(VaultPathResolver.toFilesystemPath(null, root))
     }
+
+    @Test
+    fun `a grant counts only for the folder it was given for`() {
+        val primary = "/storage/emulated/0"
+        assertEquals(true, VaultPathResolver.grantIsFor("primary:Documents/Vault", "/storage/emulated/0/Documents/Vault/", primary))
+        assertEquals(false, VaultPathResolver.grantIsFor("primary:Documents/Other", "/storage/emulated/0/Documents/Vault", primary))
+        assertEquals(false, VaultPathResolver.grantIsFor("1234-5678:Vault", "/storage/emulated/0/Vault", primary))
+        assertEquals(false, VaultPathResolver.grantIsFor(null, "/storage/emulated/0/Vault", primary))
+    }
 }

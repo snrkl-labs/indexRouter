@@ -28,6 +28,9 @@ class FileVaultStore(private val root: File) : VaultStore {
     // trap applies to a folder outside the app's Storage Scopes.
     override val isReady: Boolean get() = canActuallyWrite(root)
 
+    /** Whether the vault folder is there at all — mounted, not moved — whoever may write to it. */
+    val rootPresent: Boolean get() = root.isDirectory
+
     override fun describe(): String = root.absolutePath
 
     override fun rootName(): String? = root.name
@@ -54,7 +57,7 @@ class FileVaultStore(private val root: File) : VaultStore {
     override fun readText(path: String): String? {
         val file = File(root, path)
         if (!file.exists()) return null
-        if (!file.isFile || !file.canRead()) throw IOException("$path is there but this app cannot read it")
+        if (!file.isFile || !file.canRead()) throw IOException("$path is there but this app cannot read it — choose this vault again in Settings to let the app open files other apps wrote")
         return file.readText()
     }
 

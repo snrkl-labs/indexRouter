@@ -49,5 +49,14 @@ object VaultPathResolver {
         return if (path.startsWith(prefix)) path.removePrefix(prefix) else null
     }
 
+    /**
+     * Whether a picker grant is for the folder at [vaultRoot]. A grant kept
+     * from an earlier pick of another folder must not be used for this one.
+     */
+    fun grantIsFor(treeDocumentId: String?, vaultRoot: String, primaryStorageRoot: String): Boolean {
+        val granted = toFilesystemPath(treeDocumentId, primaryStorageRoot) ?: return false
+        return granted.trimEnd('/') == vaultRoot.trimEnd('/')
+    }
+
     private const val PRIMARY_VOLUME = "primary"
 }

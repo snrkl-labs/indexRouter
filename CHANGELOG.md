@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.19.2 — 2026-11-09
+
+### Fixed
+- **Files other apps wrote in a vault can be read and updated.** Without
+  all-files access, Android lets an app open by path only the files it created,
+  so a config file edited on another device and brought back by sync could not
+  be read. The app now uses the folder grant given when the vault was picked
+  for any file or folder a path cannot reach. Your own files are still handled
+  by path, and a vault that is not there is still never written to. A vault
+  picked before this version may need picking again in Settings to give the
+  app that grant.
+- **A config file that has never been read is not overwritten.** Catching up a
+  vault, or saving a rule edit, used to be able to write the app's copy over a
+  file edited elsewhere, leaving those edits only in the backup folder. The file
+  is now read first; until it can be, the vault is shown as behind, with
+  **Sync now**.
+
 ## v0.19.1 — 2026-11-09
 
 ### Added

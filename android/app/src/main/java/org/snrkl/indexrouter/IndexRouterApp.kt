@@ -1,6 +1,8 @@
 package org.snrkl.indexrouter
 
 import android.app.Application
+import android.os.Environment
+import android.provider.DocumentsContract
 import org.snrkl.indexrouter.action.Rerouter
 import org.snrkl.indexrouter.action.RoutingPipeline
 import org.snrkl.indexrouter.data.config.ConfigRepository
@@ -12,6 +14,8 @@ import org.snrkl.indexrouter.data.prefs.SettingsStore
 import org.snrkl.indexrouter.moc.MocGenerator
 import org.snrkl.indexrouter.data.prefs.StorageMode
 import org.snrkl.indexrouter.vault.FileVaultStore
+import org.snrkl.indexrouter.vault.GrantBackedVaultStore
+import org.snrkl.indexrouter.vault.VaultPathResolver
 import org.snrkl.indexrouter.vault.SafVaultStore
 import org.snrkl.indexrouter.vault.VaultAccessCache
 import org.snrkl.indexrouter.vault.VaultRepository
@@ -50,7 +54,22 @@ class IndexRouterApp : Application() {
             if (!group.hasVault) return null
             val profile = settings.profile(group)
             return when (profile.storageMode) {
-                StorageMode.FILES -> profile.vaultRootPath?.let { FileVaultStore(File(it)) }
+                StorageMode.FILES -> profile.vaultRootPath?.let { root ->
+                    val files = FileVaultStore(File(root))
+                    // The grant from picking the vault, when it is for this
+                    // same folder: it opens the files other apps wrote there.
+                    val tree = profile.vaultTreeUri
+                    if (tree != null && VaultPathResolver.grantIsFor(
+                            runCatching { DocumentsContract.getTreeDocumentId(tree) }.getOrNull(),
+                            root,
+                            Environment.getExternalStorageDirectory().absolutePath,
+                        )
+                    ) {
+                        GrantBackedVaultStore(files, SafVaultStore(vault, tree))
+                    } else {
+                        files
+                    }
+                }
                 StorageMode.SAF -> profile.vaultTreeUri?.let { SafVaultStore(vault, it) }
             }
         }

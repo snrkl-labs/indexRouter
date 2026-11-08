@@ -99,8 +99,10 @@ will not update across signing keys. Uninstall the old build first.
    vault and the folder inside it the app writes into — `_RingRing` by
    default, and it may be nested, such as `Inbox/_RingRing`. Grant that folder
    plus any folders your file rules target. On GrapheneOS this is answered with
-   Storage Scopes, and the app sees only the folders you grant. A gesture with
-   no vault files nothing.
+   Storage Scopes, and the app sees only the folders you grant. Without
+   either, the app opens files that other apps wrote in the vault, such as
+   files changed by sync, through the grant from picking the vault. A gesture
+   with no vault files nothing.
 2. **Generate a webhook secret** in the app. It is stored encrypted under an
    Android Keystore key, and shown so you can copy it.
 3. **In the Pebble app:** Settings → Index → Webhooks. Set the trigger to
