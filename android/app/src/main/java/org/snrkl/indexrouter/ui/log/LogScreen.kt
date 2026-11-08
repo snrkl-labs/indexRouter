@@ -1,5 +1,12 @@
 package org.snrkl.indexrouter.ui.log
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.ui.theme.GroupColor
+import org.snrkl.indexrouter.ui.theme.groupSeeds
+import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +72,19 @@ internal class LogViewModel(private val app: Application) : ViewModel() {
     private val _messages = MutableStateFlow<String?>(null)
     val messages: StateFlow<String?> = _messages.asStateFlow()
 
+    /** Each group's name and seed, and each gesture's vault folder name, for the row chips. */
+    fun groupLabels(): GroupLabels {
+        val settings = container.settings
+        return GroupLabels(
+            names = RuleGroup.entries.associateWith { settings.groupName(it) },
+            seeds = settings.groupSeeds(),
+            vaults = RuleGroup.entries.filter { it.hasVault }.associateWith { group ->
+                settings.profile(group).let { it.vaultRootPath ?: it.vaultTreeUri?.lastPathSegment }
+                    ?.trimEnd('/')?.substringAfterLast('/')?.substringAfterLast(':')
+            },
+        )
+    }
+
     fun messageShown() {
         _messages.value = null
     }
@@ -116,6 +136,8 @@ internal class LogViewModel(private val app: Application) : ViewModel() {
 @Composable
 internal fun LogScreen(viewModel: LogViewModel, onBack: () -> Unit) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val labels = remember(entries) { viewModel.groupLabels() }
+    val groupColors = rememberGroupColors(labels.seeds)
     val message by viewModel.messages.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
@@ -168,7 +190,7 @@ internal fun LogScreen(viewModel: LogViewModel, onBack: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    LogRow(entry) {
+                    LogRow(entry, labels, groupColors) {
                         // Re-route is the user overruling the classifier, and only
                         // where there is a file to move.
                         when {
@@ -214,8 +236,19 @@ internal fun LogScreen(viewModel: LogViewModel, onBack: () -> Unit) {
     }
 }
 
+internal data class GroupLabels(
+    val names: Map<RuleGroup, String>,
+    val seeds: Map<RuleGroup, Int>,
+    val vaults: Map<RuleGroup, String?>,
+)
+
 @Composable
-private fun LogRow(entry: RoutingLogEntity, onClick: () -> Unit) {
+private fun LogRow(
+    entry: RoutingLogEntity,
+    labels: GroupLabels,
+    colors: Map<RuleGroup, GroupColor>,
+    onClick: () -> Unit,
+) {
     // A marker is not a routed item: it is the record that the rest went.
     if (entry.isMarker) {
         Text(
@@ -233,9 +266,14 @@ private fun LogRow(entry: RoutingLogEntity, onClick: () -> Unit) {
     val subtitle = listOfNotNull(
         stamp.format(Date(entry.receivedAt)),
         if (entry.manuallyRouted) stringResource(R.string.log_entry_manual) else null,
-        entry.matchedKeyword?.let {
-            stringResource(R.string.log_entry_routed, it, entry.action.orEmpty())
-        } ?: stringResource(R.string.log_entry_unmatched),
+        when {
+            // A test event or a refusal was never classified; "no match" would
+            // claim it went to the inbox.
+            entry.outcome == "TEST" || entry.outcome == "REJECTED" -> stringResource(R.string.log_entry_not_routed)
+            entry.matchedKeyword != null ->
+                stringResource(R.string.log_entry_routed, entry.matchedKeyword!!, entry.action.orEmpty())
+            else -> stringResource(R.string.log_entry_unmatched)
+        },
         entry.outcome,
         entry.durationMs.takeIf { it > 0 }?.let { stringResource(R.string.log_entry_duration, it) },
         entry.targetPath,
@@ -253,6 +291,49 @@ private fun LogRow(entry: RoutingLogEntity, onClick: () -> Unit) {
             text = entry.transcript.ifBlank { stringResource(R.string.log_no_transcript) },
             style = MaterialTheme.typography.bodyLarge,
         )
+        // Which gesture sent it, in that gesture's colour, and which vault it
+        // wrote to — named, because colour is never the only cue. The two are
+        // separate: rows from before there were two vaults were sent by one
+        // gesture and written to the vault the install had then.
+        val trigger = RuleGroup.fromWire(entry.trigger)?.takeIf { it.isTrigger }
+        val vaultGroup = RuleGroup.fromWire(entry.vaultGroup)?.takeIf { it.hasVault }
+        val wrote = entry.targetPath != null || entry.audioPath != null
+        val vault = vaultGroup?.let { labels.vaults[it] }?.takeIf { wrote }
+        val color = trigger?.let { colors[it] }
+        val label = when {
+            trigger != null -> labels.names[trigger] ?: trigger.defaultName
+            entry.trigger.isNullOrBlank() -> stringResource(R.string.log_chip_no_trigger)
+            else -> entry.trigger!!
+        }
+        run {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 2.dp)) {
+                Text(
+                    text = if (vault != null) stringResource(R.string.log_chip_wrote, label, vault) else label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = color?.onContainer ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            color?.container ?: MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+                if (entry.ruleGroup == RuleGroup.COMMON.wireName) {
+                    val common = colors[RuleGroup.COMMON]
+                    Text(
+                        text = labels.names[RuleGroup.COMMON] ?: RuleGroup.COMMON.defaultName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = common?.onContainer ?: MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .background(
+                                common?.container ?: MaterialTheme.colorScheme.secondaryContainer,
+                                RoundedCornerShape(8.dp),
+                            )
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,

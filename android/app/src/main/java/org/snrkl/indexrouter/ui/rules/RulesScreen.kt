@@ -1,5 +1,9 @@
 package org.snrkl.indexrouter.ui.rules
 
+import androidx.compose.foundation.background
+import org.snrkl.indexrouter.ui.theme.GroupColor
+import org.snrkl.indexrouter.ui.theme.GroupPalette
+import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -87,6 +91,9 @@ internal fun RulesScreen(
     val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
     val headers by viewModel.headers.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
+    val groupColors = rememberGroupColors(
+        RuleGroup.entries.associateWith { headers[it]?.seed ?: GroupPalette.defaultSeed(it) },
+    )
     val message by viewModel.messages.collectAsStateWithLifecycle()
     val folderWarning by viewModel.folderWarning.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -153,6 +160,7 @@ internal fun RulesScreen(
                         name = headers[group]?.name ?: group.defaultName,
                         vault = headers[group]?.vault,
                         group = group,
+                        color = groupColors[group],
                         count = inGroup.size,
                         collapsed = isCollapsed,
                         onToggle = {
@@ -195,6 +203,7 @@ internal fun RulesScreen(
                                 }
                             },
                             onMore = { moreFor = rule },
+                            groupColor = groupColors[group],
                             handle = {
                                 Icon(
                                     imageVector = Icons.Filled.Menu,
@@ -501,6 +510,7 @@ private fun GroupHeaderRow(
     name: String,
     vault: String?,
     group: RuleGroup,
+    color: GroupColor?,
     count: Int,
     collapsed: Boolean,
     onToggle: () -> Unit,
@@ -517,7 +527,17 @@ private fun GroupHeaderRow(
             imageVector = if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
             contentDescription = stringResource(if (collapsed) R.string.group_expand else R.string.group_collapse),
         )
-        Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
+        // The group's colour, beside its name — the name is always there, so
+        // the colour is never the only way to tell the groups apart.
+        if (color != null) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(width = 6.dp, height = 36.dp)
+                    .background(color.accent, RoundedCornerShape(3.dp)),
+            )
+        }
+        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
             Text(
                 text = name,
                 style = MaterialTheme.typography.titleMedium,

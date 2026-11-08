@@ -146,6 +146,40 @@ class MainActivity : ComponentActivity() {
         onRuleFolderPicked?.invoke(inside.trim('/').substringAfterLast('/'))
     }
 
+    /**
+     * Where a folder picker opens. Without it the system picker reopens
+     * wherever it was last, which with two vaults is usually the other one —
+     * one careless tap from filing a gesture's notes in the wrong vault.
+     */
+    private fun startAt(group: RuleGroup, insideBase: Boolean): Uri? {
+        val profile = container.settings.profile(group)
+        val root = profile.vaultRootPath ?: return null
+        val path = if (insideBase && profile.baseDir.isNotBlank()) "$root/${profile.baseDir}" else root
+        return documentUriFor(path)
+    }
+
+    /**
+     * The vault picker opens on this gesture's vault if it has one, otherwise
+     * on the folder that holds the vaults — the other gesture's vault's parent,
+     * or `Documents/Obsidian` — never inside the other vault.
+     */
+    private fun vaultPickerStart(group: RuleGroup): Uri? {
+        container.settings.profile(group).vaultRootPath?.let { return documentUriFor(it) }
+        val sibling = group.other?.let { container.settings.profile(it).vaultRootPath }
+            ?: container.settings.carriedOver?.vaultRootPath
+        val parent = sibling?.trimEnd('/')?.substringBeforeLast('/')
+        return documentUriFor(parent ?: "${Environment.getExternalStorageDirectory().absolutePath}/Documents/Obsidian")
+    }
+
+    /** A primary-storage path as the document URI the picker understands, or null. */
+    private fun documentUriFor(path: String): Uri? {
+        val roots = listOf(Environment.getExternalStorageDirectory().absolutePath, "/sdcard", "/storage/self/primary")
+        val relative = roots.firstNotNullOfOrNull { r ->
+            path.trimEnd('/').takeIf { it == r || it.startsWith("$r/") }?.removePrefix(r)?.trim('/')
+        } ?: return null
+        return DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, "primary:$relative")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // A notification tapped in the shade names the screen it should open.
@@ -218,7 +252,7 @@ class MainActivity : ComponentActivity() {
                     onChooseFolderFor = { group, onPicked ->
                         pickingGroup = group
                         onRuleFolderPicked = onPicked
-                        pickRuleFolder.launch(null)
+                        pickRuleFolder.launch(startAt(group, insideBase = true))
                     },
                 )
             }
@@ -236,22 +270,23 @@ class MainActivity : ComponentActivity() {
                     onBack = { navController.popBackStack() },
                     onChooseVault = {
                         pickingGroup = vm.state.value.group
+                        val vaultStart = vaultPickerStart(pickingGroup)
                         onVaultPicked = { path, treeUri ->
                             vm.applyVaultGrant(path, treeUri) {
                                 // A freshly granted vault with no base folder
                                 // chosen yet: ask for it rather than adopting a
                                 // guess at a name in someone else's vault.
                                 onBaseFolderPicked = { relative -> vm.setBaseDir(relative) }
-                                pickBaseFolder.launch(null)
+                                pickBaseFolder.launch(startAt(pickingGroup, insideBase = false))
                             }
                             vm.refresh(hasAllFilesAccess())
                         }
-                        pickVault.launch(null)
+                        pickVault.launch(vaultStart)
                     },
                     onChooseBaseFolder = {
                         pickingGroup = vm.state.value.group
                         onBaseFolderPicked = { relative -> vm.setBaseDir(relative) }
-                        pickBaseFolder.launch(null)
+                        pickBaseFolder.launch(startAt(pickingGroup, insideBase = false))
                     },
                     onOpenFileAccess = { fileAccessRequested = true },
                     onOpenNotificationChannels = ::openNotificationChannels,
@@ -340,4 +375,8 @@ class MainActivity : ComponentActivity() {
 
     private fun hasAllFilesAccess(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+    private companion object {
+        const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+    }
 }

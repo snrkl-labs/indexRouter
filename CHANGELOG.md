@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.19.0 — 2026-11-08
+
+Fixes from the first day of using two vaults.
+
+### Added
+- **The groups are colour-coded.** Common is purple, click-hold red,
+  doubleclick-hold blue: on each group's header, as a tint and a leading
+  accent on its rule cards, and on routing-log rows. The colours are derived
+  from a seed for the light or dark theme in use, and from the dynamic palette
+  where there is one. Contrast is guaranteed, and the red is kept clear of the
+  colour Android uses for errors. A group's name is always shown, so colour is
+  never the only cue.
+- **The routing log shows the triggering gesture and the vault it wrote to**,
+  for example `click-hold → WorkVault`, plus a `common` chip when a common rule
+  handled it. Test events and refused deliveries show the trigger they arrived
+  with, or `no trigger`.
+
+### Changed
+- **The default timer keyword is `timer`**, not `alarm`. This only affects
+  fresh installs and Reset to defaults; an existing rule keeps its keyword.
+
+### Fixed
+- **The folder pickers open in the right vault.** The system folder picker
+  reopened wherever it was last, usually inside the other gesture's vault. A
+  base-folder or rule-folder pick now starts in that gesture's own vault, and
+  a vault pick starts beside the existing vaults rather than inside one.
+- **Test events and refused deliveries no longer read "no match → inbox"** in
+  the log. They were never routed, and now say so.
+
 ## v0.18.0 — 2026-11-08
 
 Two vaults, one per ring gesture. The two hold gestures can now file into two

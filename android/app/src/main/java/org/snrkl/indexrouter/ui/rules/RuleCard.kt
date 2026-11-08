@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -94,14 +95,31 @@ internal fun RuleCard(
     onMore: () -> Unit,
     /** The drag handle, supplied by the list so it can own the gesture. */
     handle: @Composable () -> Unit = {},
+    /** The group's colours; the card is tinted with them so its group is seen at a glance. */
+    groupColor: org.snrkl.indexrouter.ui.theme.GroupColor? = null,
 ) {
     SwipeToDelete(onDelete = onDelete) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    MaterialTheme.colorScheme.secondaryContainer,
+                    groupColor?.container ?: MaterialTheme.colorScheme.secondaryContainer,
                     RoundedCornerShape(16.dp),
+                )
+                // A leading accent in the group's colour. Never the only cue:
+                // the group's name heads the section the card sits in.
+                .then(
+                    if (groupColor != null) {
+                        Modifier.drawBehind {
+                            drawRoundRect(
+                                color = groupColor.accent,
+                                size = androidx.compose.ui.geometry.Size(6.dp.toPx(), size.height),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
                 )
                 // A disabled rule dims whole, chips included: it is still in the
                 // chain and still in its place in the order, it just does not

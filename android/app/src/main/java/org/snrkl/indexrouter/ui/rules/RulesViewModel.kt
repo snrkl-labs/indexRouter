@@ -22,7 +22,7 @@ import org.snrkl.indexrouter.routing.RoutingRule
 import org.snrkl.indexrouter.routing.RuleGroup
 
 /** A group's header: its display name, and for a gesture the vault it writes to. */
-internal data class GroupHeader(val name: String, val vault: String?)
+internal data class GroupHeader(val name: String, val vault: String?, val seed: Int)
 
 /** A rule's folder could not be written to, and this is the one to add. */
 internal data class FolderWarning(val folder: String)
@@ -78,6 +78,7 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
             _folderOptions.value = options
             _headers.value = RuleGroup.entries.associateWith { group ->
                 GroupHeader(
+                    seed = settings.groupSeed(group) ?: org.snrkl.indexrouter.ui.theme.GroupPalette.defaultSeed(group),
                     name = settings.groupName(group),
                     vault = if (group.isTrigger) {
                         settings.profile(group).takeIf { it.isAssigned }?.let { profile ->

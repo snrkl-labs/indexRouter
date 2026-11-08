@@ -8,7 +8,7 @@ Used only when the vault config file cannot be read at all, or after a reset. Th
 app raises a notification when it falls back here rather than degrading quietly.
 
 Only the routes that need no folder of their own are shipped as defaults:
-`task`, `dictation`, `calendar` and `alarm`. A **dictation** writes nothing at
+`task`, `dictation`, `calendar` and `timer`. A **dictation** writes nothing at
 all — not a note, not even the recording — and is the only route the keyboard's
 mic key can reach, so what gets typed into a text field is always something you
 marked for typing. Everything else — where blog ideas, shopping
@@ -50,7 +50,7 @@ common:
     priority: 20
     enabled: true
     include-in-moc: false
-  - keywords: ["alarm"]
+  - keywords: ["timer"]
     action: "timer"
     folder: null
     tags: []

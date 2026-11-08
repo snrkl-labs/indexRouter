@@ -70,6 +70,9 @@
     <string name="group_add_rule">Add a rule to %1$s</string>
     <string name="group_expand">Expand group</string>
     <string name="group_collapse">Collapse group</string>
+    <string name="log_entry_not_routed">not routed</string>
+    <string name="log_chip_no_trigger">no trigger</string>
+    <string name="log_chip_wrote">%1$s → %2$s</string>
     <string name="status_vault_granted">Vault: %1$s</string>
     <string name="status_vault_missing">Vault folder not granted</string>
     <string name="status_secret_set">Webhook secret is set</string>
