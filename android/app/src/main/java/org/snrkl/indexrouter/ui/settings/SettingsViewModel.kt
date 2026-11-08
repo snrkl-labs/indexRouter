@@ -19,12 +19,19 @@ import org.snrkl.indexrouter.data.db.LogRetention
 import org.snrkl.indexrouter.data.prefs.StorageMode
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.CalendarMode
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.ui.common.VaultFolders
 import org.snrkl.indexrouter.vault.GrantCheck
 import org.snrkl.indexrouter.vault.VaultAccess
 import org.snrkl.indexrouter.voice.VoiceImeStatus
 
 internal data class SettingsUiState(
+    /** The gesture whose vault the vault and layout cards are editing. */
+    val group: RuleGroup = RuleGroup.DOUBLE_CLICK_HOLD,
+    val groupNames: Map<RuleGroup, String> = emptyMap(),
+    val vaultAssigned: Boolean = false,
+    /** The vault this app used before there were two, if it is still waiting for a gesture. */
+    val carriedOverPath: String? = null,
     val vaultRoot: String? = null,
     val storageMode: StorageMode = StorageMode.FILES,
     val hasAllFilesAccess: Boolean = false,
@@ -60,6 +67,31 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     private val container get() = (app as IndexRouterApp).container
     private val settings get() = container.settings
 
+    private val _group = MutableStateFlow(
+        // Start on whichever gesture still needs a vault: that is why someone
+        // opens this screen after an upgrade.
+        RuleGroup.TRIGGERS.firstOrNull { !container.settings.profile(it).isAssigned }
+            ?: RuleGroup.DOUBLE_CLICK_HOLD,
+    )
+
+    /** The selected gesture's vault. Every vault setting on this screen means this one. */
+    private val vault get() = settings.profile(_group.value)
+
+    fun selectGroup(group: RuleGroup) {
+        if (!group.isTrigger) return
+        _group.value = group
+        refresh(_state.value.hasAllFilesAccess)
+    }
+
+    val commonConflict get() = container.config.commonConflict
+
+    fun resolveCommonConflict(useVault: Boolean) {
+        viewModelScope.launch {
+            container.config.resolveCommonConflict(useVault)
+            refresh(_state.value.hasAllFilesAccess)
+        }
+    }
+
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
@@ -90,19 +122,25 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             val timing = Timing.Run("settingsRefresh")
             val rules = timing.stage("rules") { container.config.rules() }
+            val vault = vault
+            val cache = container.vaultAccess(vault.group)
             _state.value = SettingsUiState(
-                vaultRoot = settings.vaultRootPath,
-                storageMode = settings.storageMode,
+                group = vault.group,
+                groupNames = RuleGroup.entries.associateWith { settings.groupName(it) },
+                vaultAssigned = vault.isAssigned,
+                carriedOverPath = settings.carriedOver?.let { it.vaultRootPath ?: it.vaultTreeUri?.toString() },
+                vaultRoot = vault.vaultRootPath,
+                storageMode = vault.storageMode,
                 hasAllFilesAccess = hasAllFilesAccess,
-                baseDir = settings.baseDir,
-                taskDir = settings.taskDirName,
-                fallbackDir = settings.fallbackDirName,
-                audioDir = settings.audioDirName,
-                taskTags = settings.taskTags.joinToString(", "),
-                taskCreatedDate = settings.taskCreatedDate,
-                dateFiling = settings.dateFiling,
+                baseDir = vault.baseDir,
+                taskDir = vault.taskDirName,
+                fallbackDir = vault.fallbackDirName,
+                audioDir = vault.audioDirName,
+                taskTags = vault.taskTags.joinToString(", "),
+                taskCreatedDate = vault.taskCreatedDate,
+                dateFiling = vault.dateFiling,
                 serverPort = settings.serverPort,
-                mocRetention = settings.mocBackupRetention,
+                mocRetention = vault.mocBackupRetention,
                 routeNotify = ActionType.entries.associateWith { settings.routeNotify(it) },
                 notifyFallback = settings.notifyFallback,
                 debugStream = settings.debugStream,
@@ -124,19 +162,21 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
                 // precisely because they suspect access is wrong, so showing the
                 // cached answer would be showing them the thing they doubt.
                 requirements = timing.stage("probe") {
-                    if (probeFolders) {
-                        container.vaultAccess.refresh(
-                            VaultFolders.core(app, settings),
-                            VaultFolders.forRules(app, settings, rules),
+                    if (!vault.isAssigned) {
+                        emptyList()
+                    } else if (probeFolders) {
+                        cache.refresh(
+                            VaultFolders.core(app, vault),
+                            VaultFolders.forRules(app, vault, rules),
                         )
                     } else {
                         // Whatever the last probe found. Not stale in any way
                         // that matters: nothing that skips the probe can change
                         // which folders are reachable.
-                        container.vaultAccess.peek(
-                            VaultFolders.core(app, settings),
-                            VaultFolders.forRules(app, settings, rules),
-                        ) ?: _state.value.requirements
+                        cache.peek(
+                            VaultFolders.core(app, vault),
+                            VaultFolders.forRules(app, vault, rules),
+                        ) ?: _state.value.requirements.takeIf { _state.value.group == vault.group }.orEmpty()
                     }
                 },
             )
@@ -149,37 +189,31 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     fun setRouteNotify(action: ActionType, enabled: Boolean) {
         settings.setRouteNotify(action, enabled)
         _state.update { it.copy(routeNotify = it.routeNotify + (action to enabled)) }
-        mirrorToVault()
     }
 
     fun setNotifyFallback(enabled: Boolean) {
         settings.notifyFallback = enabled
         _state.update { it.copy(notifyFallback = enabled) }
-        mirrorToVault()
     }
 
     fun setDebugStream(enabled: Boolean) {
         settings.debugStream = enabled
         _state.update { it.copy(debugStream = enabled) }
-        mirrorToVault()
     }
 
     fun setLogRetentionHours(hours: Int) {
         settings.logRetentionHours = hours
         _state.update { it.copy(logRetentionHours = settings.logRetentionHours) }
-        mirrorToVault()
     }
 
     fun setDetailedContentLogging(enabled: Boolean) {
         settings.detailedContentLogging = enabled
         _state.update { it.copy(detailedContentLogging = enabled) }
-        mirrorToVault()
     }
 
     fun setCalendarMode(mode: CalendarMode) {
         settings.calendarMode = mode
         _state.update { it.copy(calendarMode = mode) }
-        mirrorToVault()
     }
 
     fun setCalendarSharePackage(pkg: String) {
@@ -190,7 +224,6 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
                 calendarShareInstalled = isShareTargetInstalled(settings.calendarSharePackage),
             )
         }
-        mirrorToVault()
     }
 
     private fun isShareTargetInstalled(pkg: String): Boolean {
@@ -205,31 +238,29 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     fun setVoiceCutoffMinutes(minutes: Int) {
         settings.voiceCutoffMinutes = minutes
         _state.update { it.copy(voiceCutoffMinutes = settings.voiceCutoffMinutes) }
-        mirrorToVault()
     }
 
     fun setVoiceBufferSize(size: Int) {
         settings.voiceBufferSize = size
         _state.update { it.copy(voiceBufferSize = settings.voiceBufferSize) }
-        mirrorToVault()
     }
 
     // ---- folders and behaviour ---------------------------------------------
 
     fun setTaskTags(raw: String) {
-        settings.taskTags = raw.split(',').map { it.trim() }.filter { it.isNotBlank() }
-        _state.update { it.copy(taskTags = settings.taskTags.joinToString(", ")) }
+        vault.taskTags = raw.split(',').map { it.trim() }.filter { it.isNotBlank() }
+        _state.update { it.copy(taskTags = vault.taskTags.joinToString(", ")) }
         mirrorToVault()
     }
 
     fun setTaskCreatedDate(enabled: Boolean) {
-        settings.taskCreatedDate = enabled
+        vault.taskCreatedDate = enabled
         _state.update { it.copy(taskCreatedDate = enabled) }
         mirrorToVault()
     }
 
     fun setDateFiling(depth: DateFiling.Depth) {
-        settings.dateFiling = depth
+        vault.dateFiling = depth
         _state.update { it.copy(dateFiling = depth) }
         mirrorToVault()
     }
@@ -237,13 +268,12 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     fun setServerPort(port: Int) {
         settings.serverPort = port
         _state.update { it.copy(serverPort = settings.serverPort) }
-        mirrorToVault()
         _messages.value = app.getString(R.string.settings_port_restart)
     }
 
     fun setMocRetention(count: Int) {
-        settings.mocBackupRetention = count
-        _state.update { it.copy(mocRetention = settings.mocBackupRetention) }
+        vault.mocBackupRetention = count
+        _state.update { it.copy(mocRetention = vault.mocBackupRetention) }
         mirrorToVault()
     }
 
@@ -251,15 +281,16 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
         val clean = name.trim().trim('/').substringAfterLast('/')
         if (clean.isBlank()) return
         when (which) {
-            ReservedFolder.TASK -> settings.taskDirName = clean
-            ReservedFolder.FALLBACK -> settings.fallbackDirName = clean
-            ReservedFolder.AUDIO -> settings.audioDirName = clean
+            ReservedFolder.TASK -> vault.taskDirName = clean
+            ReservedFolder.FALLBACK -> vault.fallbackDirName = clean
+            ReservedFolder.AUDIO -> vault.audioDirName = clean
         }
         // This one genuinely changes which folders have to be reachable, so it
         // is the case that does pay for a re-probe.
-        container.vaultAccess.invalidate()
+        val group = vault.group
+        container.vaultAccess(group).invalidate()
         viewModelScope.launch {
-            container.config.writeThroughToVault()
+            container.config.writeThroughToVault(group)
             refresh(_state.value.hasAllFilesAccess, probeFolders = true)
         }
     }
@@ -273,9 +304,11 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
      * status screen reports the config as unsynced.
      */
     private fun mirrorToVault() {
+        val group = vault.group
+        if (!vault.isAssigned) return
         viewModelScope.launch {
             val timing = Timing.Run("settingsMirror")
-            timing.stage("writeThrough") { container.config.writeThroughToVault() }
+            timing.stage("writeThrough") { container.config.writeThroughToVault(group) }
             timing.finish()
         }
     }
@@ -283,32 +316,70 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     // ---- vault grant --------------------------------------------------------
 
     fun applyVaultGrant(path: String?, treeUriString: String?, onNeedsBaseFolder: () -> Unit) {
+        val vault = vault
         viewModelScope.launch {
-            settings.storageMode = if (path != null) StorageMode.FILES else StorageMode.SAF
-            if (path != null) settings.vaultRootPath = path
-            treeUriString?.let { settings.vaultTreeUri = android.net.Uri.parse(it) }
-            container.vaultAccess.invalidate()
+            vault.storageMode = if (path != null) StorageMode.FILES else StorageMode.SAF
+            if (path != null) vault.vaultRootPath = path
+            treeUriString?.let { vault.vaultTreeUri = android.net.Uri.parse(it) }
+            container.vaultAccess(vault.group).invalidate()
 
             // Checked BEFORE anything is written: a grant one folder too deep
             // does not fail, it quietly creates folders in the wrong place.
-            if (!checkGrantLevel()) return@launch
+            if (!checkGrantLevel(vault)) return@launch
 
-            if (!settings.baseDirConfirmed) {
+            if (!vault.baseDirConfirmed) {
                 onNeedsBaseFolder()
                 return@launch
             }
-            reload()
+            assigned(vault)
         }
     }
 
     fun setBaseDir(relative: String) {
-        settings.baseDir = relative
-        settings.baseDirConfirmed = true
-        viewModelScope.launch {
-            container.config.writeThroughToVault()
-            _messages.value = app.getString(R.string.base_folder_set, relative)
-            refresh(_state.value.hasAllFilesAccess)
+        val vault = vault
+        val clean = relative.trim('/')
+        if (clashesWithOtherGesture(vault, clean)) {
+            _messages.value = app.getString(
+                R.string.base_folder_shared,
+                settings.groupName(vault.group.other!!),
+            )
+            return
         }
+        vault.baseDir = clean
+        vault.baseDirConfirmed = true
+        viewModelScope.launch {
+            _messages.value = app.getString(R.string.base_folder_set, clean)
+            assigned(vault)
+        }
+    }
+
+    /**
+     * A gesture's vault is complete — folder granted, base folder chosen.
+     * Its own config file restores its rules if it has one; otherwise one is
+     * written. Either way the gesture can now file recordings.
+     */
+    private suspend fun assigned(vault: org.snrkl.indexrouter.data.prefs.VaultProfile) {
+        container.vaultAccess(vault.group).invalidate()
+        val result = container.config.onVaultAssigned(vault.group)
+        if (result !is ConfigRepository.SyncResult.Loaded) {
+            _messages.value = app.getString(R.string.toast_sync_failed, syncReason(result))
+        }
+        refresh(_state.value.hasAllFilesAccess)
+    }
+
+    /**
+     * Two gestures may share a vault, but never a base folder: each base folder
+     * holds its gesture's config file, and two gestures writing one file would
+     * each overwrite the other's rules.
+     */
+    private fun clashesWithOtherGesture(vault: org.snrkl.indexrouter.data.prefs.VaultProfile, baseDir: String): Boolean {
+        val other = settings.profile(vault.group.other ?: return false)
+        if (!other.isAssigned || !other.baseDirConfirmed) return false
+        val sameRoot = when (vault.storageMode) {
+            StorageMode.FILES -> other.storageMode == StorageMode.FILES && other.vaultRootPath == vault.vaultRootPath
+            StorageMode.SAF -> other.storageMode == StorageMode.SAF && other.vaultTreeUri == vault.vaultTreeUri
+        }
+        return sameRoot && other.baseDir.trim('/').equals(baseDir, ignoreCase = true)
     }
 
     /**
@@ -316,37 +387,65 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
      * inside it. One setting now does what used to need each path rewritten.
      */
     fun adoptGrantedFolderAsBase(folderName: String) {
-        settings.baseDir = ""
+        val vault = vault
+        vault.baseDir = ""
+        vault.baseDirConfirmed = true
         viewModelScope.launch {
-            container.config.writeThroughToVault()
             _messages.value = app.getString(R.string.grant_paths_adjusted, folderName)
             _nestedGrant.value = null
+            assigned(vault)
+        }
+    }
+
+    /** Gives the carried-over vault to the selected gesture. */
+    fun useCarriedOver() {
+        val group = vault.group
+        viewModelScope.launch {
+            val result = container.config.assignCarriedOver(group)
+            if (result !is ConfigRepository.SyncResult.Loaded) {
+                _messages.value = app.getString(R.string.toast_sync_failed, syncReason(result))
+            }
+            container.vaultAccess(group).invalidate()
             refresh(_state.value.hasAllFilesAccess)
         }
     }
 
-    private suspend fun checkGrantLevel(): Boolean {
-        val store = container.vaultStore() ?: return false
+    /** Forgets the selected gesture's vault. Its recordings then fail visibly. */
+    fun unassignVault() {
+        val vault = vault
+        vault.unassign()
+        container.vaultAccess(vault.group).invalidate()
+        refresh(_state.value.hasAllFilesAccess)
+    }
+
+    private suspend fun checkGrantLevel(vault: org.snrkl.indexrouter.data.prefs.VaultProfile): Boolean {
+        val store = container.vaultStore(vault.group) ?: return false
         val diagnosis = withContext(Dispatchers.IO) {
             GrantCheck.diagnose(
                 grantedFolderName = store.rootName(),
-                configuredPaths = listOf(settings.baseDir),
+                configuredPaths = listOf(vault.baseDir),
             )
         }
         return when (diagnosis) {
             is GrantCheck.Result.Ok -> true
             is GrantCheck.Result.NestedInsideItself -> {
-                _nestedGrant.value = NestedGrant(diagnosis.folderName, settings.baseDir)
+                _nestedGrant.value = NestedGrant(diagnosis.folderName, vault.baseDir)
                 false
             }
         }
+    }
+
+    private fun syncReason(result: ConfigRepository.SyncResult): String = when (result) {
+        is ConfigRepository.SyncResult.Loaded -> ""
+        is ConfigRepository.SyncResult.Fallback -> result.reason
+        is ConfigRepository.SyncResult.Failed -> result.reason
     }
 
     // ---- config -------------------------------------------------------------
 
     fun reload() {
         viewModelScope.launch {
-            _messages.value = when (val result = container.config.reloadFromVault()) {
+            _messages.value = when (val result = container.config.reloadFromVault(vault.group)) {
                 is ConfigRepository.SyncResult.Loaded ->
                     app.getString(R.string.toast_reloaded, result.ruleCount)
                 is ConfigRepository.SyncResult.Fallback ->
@@ -360,7 +459,7 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
 
     fun export() {
         viewModelScope.launch {
-            _messages.value = when (val result = container.config.writeThroughToVault()) {
+            _messages.value = when (val result = container.config.writeThroughToVault(vault.group)) {
                 is ConfigRepository.SyncResult.Loaded -> app.getString(R.string.toast_exported)
                 is ConfigRepository.SyncResult.Fallback ->
                     app.getString(R.string.toast_sync_failed, result.reason)

@@ -144,6 +144,13 @@ class FileVaultStore(private val root: File) : VaultStore {
 
     private fun ensureFolder(folder: File) {
         if (folder.isDirectory) return
+        // Folders inside the vault are created on demand; the vault itself
+        // never is. A missing root means the vault is not there — unmounted,
+        // moved, or a grant gone — and recreating it would scatter recordings
+        // into an empty look-alike that sync never sees.
+        if (!root.isDirectory) {
+            throw IOException("The vault at ${root.absolutePath} is not there — it is never created by this app.")
+        }
         if (!folder.mkdirs() && !folder.isDirectory) {
             throw IOException("Cannot create ${relative(folder)} — add it to this app's Storage Scopes.")
         }

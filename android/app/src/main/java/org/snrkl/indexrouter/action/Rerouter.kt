@@ -8,6 +8,7 @@ import org.snrkl.indexrouter.data.db.RoutingLogDao
 import org.snrkl.indexrouter.data.db.RoutingLogEntity
 import org.snrkl.indexrouter.data.prefs.SettingsStore
 import org.snrkl.indexrouter.routing.ActionType
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.vault.VaultStore
 import java.time.LocalDate
 
@@ -26,7 +27,7 @@ import java.time.LocalDate
  */
 class Rerouter(
     private val settings: SettingsStore,
-    private val vaultStore: () -> VaultStore?,
+    private val vaultStore: (RuleGroup) -> VaultStore?,
     private val logDao: RoutingLogDao,
 ) {
 
@@ -42,7 +43,12 @@ class Rerouter(
     }
 
     suspend fun reroute(entry: RoutingLogEntity, target: Target): Result = withContext(Dispatchers.IO) {
-        val store = vaultStore() ?: return@withContext Result.Failed("no vault access")
+        // Within the vault the item is already in. Moving it to the other
+        // gesture's vault is a different operation with different rules.
+        val group = vaultGroupOf(entry)
+            ?: return@withContext Result.Failed("this item is not in a vault")
+        val settings = settings.profile(group)
+        val store = vaultStore(group) ?: return@withContext Result.Failed("no vault access")
         val from = entry.targetPath
             ?: return@withContext Result.Failed("this item has no file to move")
 
@@ -91,5 +97,15 @@ class Rerouter(
             targetPath = to,
         )
         Result.Moved(from, to)
+    }
+
+    companion object {
+        /**
+         * The gesture whose vault holds an entry's files. Rows written before
+         * there were two vaults carry it from the migration; a row without it
+         * falls back to its trigger.
+         */
+        fun vaultGroupOf(entry: RoutingLogEntity): RuleGroup? =
+            (RuleGroup.fromWire(entry.vaultGroup) ?: RuleGroup.fromWire(entry.trigger))?.takeIf { it.isTrigger }
     }
 }

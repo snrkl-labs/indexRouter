@@ -1,5 +1,63 @@
 # Changelog
 
+## v0.18.0 — 2026-11-08
+
+Two vaults, one per ring gesture. The two hold gestures can now file into two
+different vaults, each with its own base folder and its own config file, and a
+recording is never written to the vault the other gesture owns.
+
+### Upgrading from 0.17.0
+- **Neither gesture has a vault after the upgrade.** The vault the app already
+  had is kept, with its rules, and the status screen asks which gesture it
+  belongs to: Settings → choose the gesture → **Use the existing vault**.
+  Until a gesture has a vault, its recordings are answered with 503, so the
+  Pebble app resends them, and they are filed if a vault is set within its
+  retry window.
+- **Priorities are unchanged**, so the vault routes exactly as it did once it
+  is assigned.
+- **The existing config file is left as it is** until the next edit rewrites
+  it in the new format.
+
+### Added
+- **Rule groups.** One list, grouped: a `common` group for the rules that need
+  no vault (timer, calendar, dictation), then one group per gesture for file and
+  task rules. Each group adds its own rules and offers only its own types.
+- **Evaluation by priority across groups.** A recording is checked against the
+  common rules and its own gesture's rules, as one list, by priority. The other
+  gesture's rules are never evaluated. Each card shows its priority, and a
+  drag changes only the dragged rule's number.
+- **A vault per gesture**, set up separately in Settings. The base folder may
+  now have several segments, for example `Inbox/_RingRing`.
+- **Config format `00.05.00`**, one file per vault. Each file holds that vault's
+  layout and rules, plus a copy of the common rules. It never names a gesture or
+  another vault. A common edit is written to every vault. A vault that cannot
+  be reached is marked and caught up later. If the two copies disagree on
+  reload, the app asks which to keep.
+- **The trigger header is checked.** `test-event` is answered and logged, and
+  routes nothing. A missing or unknown trigger is refused with 400.
+- **Resent deliveries are filed once**, recognised by their delivery id. The
+  ids are kept for 24 hours, separately from the routing log, and hold no
+  content.
+- **503 for an unreachable vault.** Before writing anything, the app checks
+  that the folders a recording needs can be written. If they cannot, it writes
+  nothing and answers 503, so the Pebble app resends. A resend updates the same
+  log row and does not notify again.
+
+### Changed
+- **A timer no longer saves its recording.** The routing log row is its only
+  record, as it already was for the timer itself. Dictation still saves
+  nothing; calendar and the vault routes still save the recording.
+- **Device settings are no longer written to a vault file:** port,
+  notifications, privacy, voice input and calendar hand-off. They live in the
+  app. A file from an older version is read for them once.
+- **The routing log records the group and the vault** each recording was
+  routed under.
+
+### Fixed
+- **A missing vault is never recreated.** If a vault folder had gone, a write
+  could rebuild its folder tree from nothing. The app now refuses to create the
+  vault's own folder.
+
 ## v0.17.0 — 2026-10-28
 
 The first public release: signed, published on GitHub, and installable and

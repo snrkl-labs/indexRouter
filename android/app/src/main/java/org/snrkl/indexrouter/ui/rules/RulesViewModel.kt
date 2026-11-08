@@ -19,6 +19,10 @@ import org.snrkl.indexrouter.data.config.ConfigRepository
 import org.snrkl.indexrouter.data.config.toDomain
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.RoutingRule
+import org.snrkl.indexrouter.routing.RuleGroup
+
+/** A group's header: its display name, and for a gesture the vault it writes to. */
+internal data class GroupHeader(val name: String, val vault: String?)
 
 /** A rule's folder could not be written to, and this is the one to add. */
 internal data class FolderWarning(val folder: String)
@@ -47,21 +51,46 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
     val folderWarning: StateFlow<FolderWarning?> = _folderWarning.asStateFlow()
 
     /**
-     * Folder names already under the base folder, for the folder dropdown.
-     *
-     * Names rather than paths: a rule's folder is a single segment, and handing
-     * the UI paths is how the old vault-root semantics leaked back in once
-     * already. The dropdown resolves them for display only.
+     * Folder names already under each gesture's base folder, for the folder
+     * dropdown. Names rather than paths: a rule's folder is a single segment.
      */
-    private val _folderOptions = MutableStateFlow<List<String>>(emptyList())
-    val folderOptions: StateFlow<List<String>> = _folderOptions.asStateFlow()
+    private val _folderOptions = MutableStateFlow<Map<RuleGroup, List<String>>>(emptyMap())
+    val folderOptions: StateFlow<Map<RuleGroup, List<String>>> = _folderOptions.asStateFlow()
+
+    /** What each group's header says: its name and, for a gesture, its vault. */
+    private val _headers = MutableStateFlow<Map<RuleGroup, GroupHeader>>(emptyMap())
+    val headers: StateFlow<Map<RuleGroup, GroupHeader>> = _headers.asStateFlow()
 
     fun refreshFolders() {
         viewModelScope.launch {
-            val names = withContext(Dispatchers.IO) {
-                container.vaultStore()?.subfolderNames(settings.baseDir).orEmpty()
+            val options = withContext(Dispatchers.IO) {
+                RuleGroup.TRIGGERS.associateWith { group ->
+                    val profile = settings.profile(group)
+                    if (!profile.isAssigned) {
+                        emptyList()
+                    } else {
+                        runCatching {
+                            container.vaultStore(group)?.subfolderNames(profile.baseDir).orEmpty()
+                        }.getOrDefault(emptySet()).sortedBy { it.lowercase() }
+                    }
+                }
             }
-            _folderOptions.value = names.sortedBy { it.lowercase() }
+            _folderOptions.value = options
+            _headers.value = RuleGroup.entries.associateWith { group ->
+                GroupHeader(
+                    name = settings.groupName(group),
+                    vault = if (group.isTrigger) {
+                        settings.profile(group).takeIf { it.isAssigned }?.let { profile ->
+                            listOfNotNull(
+                                profile.vaultRootPath?.substringAfterLast('/'),
+                                profile.baseDir.takeIf { it.isNotBlank() },
+                            ).joinToString(" › ")
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
         }
     }
 
@@ -73,25 +102,18 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         _folderWarning.value = null
     }
 
-    val fallbackDirName: String get() = settings.fallbackDirName
-    val fallbackPath: String get() = settings.fallbackPath()
-    val taskPath: String get() = settings.taskPath()
-    val audioPath: String get() = settings.audioPath()
-    val baseDir: String get() = settings.baseDir
-    val vaultRootPath: String? get() = settings.vaultRootPath
-    val taskTags: List<String> get() = settings.taskTags
-    val audioDirName: String get() = settings.audioDirName
+    fun profile(group: RuleGroup) = settings.profile(group)
 
     /** `blogPostIdeas` shown as `_RingRing/blogPostIdeas`; still stored as the name. */
-    fun resolvedFolder(name: String?): String = settings.rulePath(name)
+    fun resolvedFolder(group: RuleGroup, name: String?): String =
+        if (group.isTrigger) settings.profile(group).rulePath(name) else ""
 
     /**
      * Where a route writes when the rule does not choose — shown rather than
-     * left as an empty control, because "the same place every time" is still
-     * worth knowing without going hunting for it.
+     * left as an empty control.
      */
-    fun fixedFolderFor(action: ActionType): String? = when (action) {
-        ActionType.TASK -> settings.taskPath()
+    fun fixedFolderFor(group: RuleGroup, action: ActionType): String? = when (action) {
+        ActionType.TASK -> if (group.isTrigger) settings.profile(group).taskPath() else ""
         ActionType.TIMER, ActionType.CALENDAR, ActionType.DICTATION -> ""
         ActionType.FILE -> null
     }
@@ -112,20 +134,28 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         }
     }
 
-    /** A new, empty rule, expanded so there is somewhere to type its keywords. */
-    fun addRule(onCreated: (Long) -> Unit) {
+    /**
+     * A new, empty rule in [group], expanded so there is somewhere to type its
+     * keywords. Its type is the first one the group allows.
+     */
+    fun addRule(group: RuleGroup, onCreated: (Long) -> Unit) {
         viewModelScope.launch {
+            // Priority is one number space shared by every group, so a new rule
+            // goes after everything rather than after its own group's last.
             val nextPriority = (rules.value.maxOfOrNull { it.priority } ?: 0) + PRIORITY_STEP
             val blank = RoutingRule(
                 keywords = emptyList(),
-                action = ActionType.FILE,
+                action = ActionType.entries.first { group.allows(it) },
                 priority = nextPriority,
+                group = group,
             )
             // Saved with no keywords on purpose: the card is the editor, so the
             // rule has to exist before it can be filled in. The classifier
             // skips a keywordless rule, so it cannot misroute in the meantime.
             container.config.upsert(blank)
-            rules.value.lastOrNull { it.keywords.isEmpty() }?.let { onCreated(it.id) }
+            container.database.rules().all()
+                .lastOrNull { it.keywords.isBlank() && it.groupId == group.wireName }
+                ?.let { onCreated(it.id) }
         }
     }
 
@@ -143,27 +173,54 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         dragged ?: real
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun moveRule(from: Int, to: Int) {
+    fun moveRule(fromKey: Any, toKey: Any) {
         val current = _dragOrder.value ?: rules.value
-        if (from !in current.indices || to !in current.indices) return
+        val from = current.indexOfFirst { it.id == fromKey }
+        val to = current.indexOfFirst { it.id == toKey }
+        if (from < 0 || to < 0 || current[from].group != current[to].group) return
         _dragOrder.value = current.toMutableList().apply { add(to, removeAt(from)) }
     }
 
+    /** Drags stay inside a group: priorities are numbered per group. */
+    fun sameGroup(a: Any, b: Any): Boolean {
+        val current = _dragOrder.value ?: rules.value
+        val ga = current.firstOrNull { it.id == a }?.group ?: return false
+        return current.firstOrNull { it.id == b }?.group == ga
+    }
+
     /**
-     * Renumbers priorities to 10, 20, 30… in the order the cards now sit.
+     * Settles a drag, in one number space shared by every group.
      *
-     * Gaps of ten on purpose: the numbers exist so the routing table can be
-     * re-ordered by hand in Obsidian, and consecutive numbers would leave no
-     * room to slot a rule between two others without renumbering the file. The
-     * handle is only the convenient way to do it on the phone.
+     * Only the moved rule's priority changes: it takes a number between its new
+     * neighbours **within its group**. Every other rule keeps its number, so
+     * nothing moves relative to the other groups' rules except the one rule
+     * that was dragged — and where it lands among them is visible, because
+     * each card shows its priority.
+     *
+     * When there is no whole number between the neighbours, every rule in
+     * every group is renumbered 10, 20, 30… in the current overall order.
+     * That order is consistent with both gestures' chains, so the renumbering
+     * changes no rule's position in either.
      */
     fun commitOrder() {
         val ordered = _dragOrder.value ?: return
+        val before = rules.value
         viewModelScope.launch {
-            ordered.forEachIndexed { index, rule ->
-                val priority = (index + 1) * PRIORITY_STEP
-                if (rule.priority != priority) {
-                    container.config.upsert(rule.copy(priority = priority))
+            val moved = ordered.firstOrNull { rule ->
+                val group = ordered.filter { it.group == rule.group }
+                val was = before.filter { it.group == rule.group }
+                group.indexOf(rule) != was.indexOfFirst { it.id == rule.id }
+            }
+            if (moved != null) {
+                val group = ordered.filter { it.group == moved.group }
+                val at = group.indexOfFirst { it.id == moved.id }
+                val above = group.getOrNull(at - 1)?.priority
+                val below = group.getOrNull(at + 1)?.priority
+                val target = PriorityPlacement.between(above, below)
+                if (target != null) {
+                    container.config.upsertAll(listOf(moved.copy(priority = target)))
+                } else {
+                    container.config.upsertAll(PriorityPlacement.renumberAll(before, moved, above, below))
                 }
             }
             // Only now let the database order take over again, so the list does
@@ -172,11 +229,11 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         }
     }
 
-    fun saveAudioFolder(name: String) {
+    fun saveAudioFolder(group: RuleGroup, name: String) {
         val clean = name.trim().trim('/').substringAfterLast('/')
-        if (clean.isBlank()) return
-        settings.audioDirName = clean
-        viewModelScope.launch { container.config.writeThroughToVault() }
+        if (clean.isBlank() || !group.isTrigger) return
+        settings.profile(group).audioDirName = clean
+        viewModelScope.launch { container.config.writeThroughToVault(group) }
     }
 
     fun setEnabled(rule: RoutingRule, enabled: Boolean) {
@@ -213,11 +270,11 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
     }
 
     /** The catch-all is a setting, not a keyword-less rule the classifier could match. */
-    fun saveDefaultRoute(folderName: String) {
+    fun saveDefaultRoute(group: RuleGroup, folderName: String) {
         val folder = folderName.trim().trim('/').substringAfterLast('/')
-        if (folder.isBlank()) return
-        settings.fallbackDirName = folder
-        viewModelScope.launch { container.config.writeThroughToVault() }
+        if (folder.isBlank() || !group.isTrigger) return
+        settings.profile(group).fallbackDirName = folder
+        viewModelScope.launch { container.config.writeThroughToVault(group) }
     }
 
     private companion object {
@@ -230,12 +287,14 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
      * to write. Say so on save, not at 3am.
      */
     private suspend fun warnIfFolderUnreachable(rule: RoutingRule) {
+        if (!rule.group.isTrigger) return
+        val profile = settings.profile(rule.group)
         val folder = when (rule.action) {
-            ActionType.FILE -> settings.rulePath(rule.folder)
-            ActionType.TASK -> settings.taskPath()
+            ActionType.FILE -> profile.rulePath(rule.folder)
+            ActionType.TASK -> profile.taskPath()
             else -> return
         }
-        val store = container.vaultStore() ?: return
+        val store = container.vaultStore(rule.group) ?: return
         val access = withContext(Dispatchers.IO) { store.access(folder) }
         if (!access.usable) _folderWarning.value = FolderWarning(folder)
     }

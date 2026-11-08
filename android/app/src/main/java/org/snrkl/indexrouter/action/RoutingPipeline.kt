@@ -8,19 +8,23 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.snrkl.indexrouter.AppIdentity
-import org.snrkl.indexrouter.Timing
 import org.snrkl.indexrouter.R
+import org.snrkl.indexrouter.Timing
 import org.snrkl.indexrouter.data.config.ConfigRepository
+import org.snrkl.indexrouter.data.db.DeliveryLedger
 import org.snrkl.indexrouter.data.db.LogKeeper
 import org.snrkl.indexrouter.data.db.RoutingLogDao
 import org.snrkl.indexrouter.data.db.RoutingLogEntity
 import org.snrkl.indexrouter.data.prefs.SettingsStore
+import org.snrkl.indexrouter.data.prefs.VaultProfile
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.CalendarMode
 import org.snrkl.indexrouter.routing.KeywordStripper
 import org.snrkl.indexrouter.routing.RoutingClassifier
 import org.snrkl.indexrouter.routing.RoutingDecision
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.routing.SharePhrase
+import org.snrkl.indexrouter.routing.TriggerHeader
 import org.snrkl.indexrouter.service.DebugStream
 import org.snrkl.indexrouter.service.Notifications
 import org.snrkl.indexrouter.vault.VaultStore
@@ -35,25 +39,40 @@ import java.time.LocalDateTime
  * Rule one throughout: never lose a recording silently. Every path — match, no
  * match, or outright failure — ends in a log row, and everything except a clean
  * match also raises a notification.
+ *
+ * Rule two, since there are two vaults: **never fail over**. A gesture's
+ * recording is written to that gesture's vault or nowhere. If the vault cannot
+ * be reached, nothing is written to the other one under any circumstance —
+ * a note filed in the wrong vault is worse than a lost one.
+ * Only this gesture's [VaultStore] is ever obtained, so the other vault is not
+ * so much avoided as unreachable from here.
  */
 class RoutingPipeline(
     private val context: Context,
     private val config: ConfigRepository,
     private val logDao: RoutingLogDao,
-    private val vaultStore: () -> VaultStore?,
+    private val ledger: DeliveryLedger,
+    private val vaultStore: (RuleGroup) -> VaultStore?,
     private val settings: SettingsStore,
-    /** Given a folder name, drops a query sample in it if it has none yet. */
-    private val onFolderUsed: suspend (String) -> Unit = {},
+    /** Given a gesture and a folder name, drops a query sample in it if it has none yet. */
+    private val onFolderUsed: suspend (RuleGroup, String) -> Unit = { _, _ -> },
 ) {
 
     private val debug = DebugStream(context, settings)
     private val logKeeper = LogKeeper(logDao) { settings.logRetentionHours }
 
-    suspend fun handle(payload: WebhookPayload) = withContext(Dispatchers.IO) {
+    /**
+     * Handles one delivery and says what to answer.
+     *
+     * The answer is the point of doing the work before answering: 503 makes
+     * Pebble resend the delivery, which is how a recording survives a vault
+     * that is briefly unreachable without this app storing it anywhere. See
+     * [route] for exactly when that is allowed.
+     *
+     * @return the HTTP status for the Pebble app.
+     */
+    suspend fun handle(payload: WebhookPayload): Int = withContext(Dispatchers.IO) {
         val receivedAt = System.currentTimeMillis()
-        val recordedAt = NoteContent.toLocalDateTime(payload.recordedAtMillis) ?: LocalDateTime.now()
-        val timing = Timing.Run("webhook")
-
         debug.event(
             context.getString(R.string.debug_stage_received),
             context.getString(
@@ -64,9 +83,69 @@ class RoutingPipeline(
             ),
         )
 
+        val group = when (val trigger = TriggerHeader.parse(payload.trigger)) {
+            is TriggerHeader.Gesture -> trigger.group
+            TriggerHeader.TestEvent -> {
+                // Answered so the Pebble app shows its test as delivered; written
+                // to the log so it can be seen to have arrived; nothing else.
+                insertRow(payload, receivedAt, STATUS_TEST, error = "test event — nothing routed")
+                return@withContext HTTP_OK
+            }
+            else -> {
+                // Never guess a vault. Refused outright, and Pebble does not
+                // resend a 4xx, so this is the one notification it gets.
+                val shown = (trigger as? TriggerHeader.Unknown)?.value ?: "none"
+                Notifications.alert(
+                    context,
+                    context.getString(R.string.alert_trigger_refused_title),
+                    context.getString(R.string.alert_trigger_refused_body, shown),
+                )
+                insertRow(payload, receivedAt, STATUS_REJECTED, error = "no usable X-Index-Trigger ($shown)")
+                return@withContext HTTP_BAD_REQUEST
+            }
+        }
+
+        val attempt = when (val decision = ledger.begin(payload.deliveryId)) {
+            DeliveryLedger.Decision.AlreadyDone -> {
+                debug.event(context.getString(R.string.debug_stage_logged), "repeat delivery — already filed")
+                return@withContext HTTP_OK
+            }
+            // The same id is being handled by another request this moment.
+            // Asking Pebble to come back is safe: the first one either
+            // finishes, making the retry a no-op, or leaves nothing behind.
+            DeliveryLedger.Decision.InProgress -> return@withContext HTTP_UNAVAILABLE
+            is DeliveryLedger.Decision.Process -> decision
+        }
+
+        val outcome = try {
+            route(payload, group, receivedAt, attempt)
+        } catch (t: Throwable) {
+            // Anything unforeseen is final: a retry of a bug is the same bug.
+            Log.e(AppIdentity.LOG_TAG, "Routing failed", t)
+            ledger.finish(payload.deliveryId, retry = false, logRowId = attempt.previous?.logRowId, notified = true)
+            HTTP_OK
+        }
+        runCatching { logKeeper.prune() }
+        runCatching { ledger.prune() }
+        outcome
+    }
+
+    private suspend fun route(
+        payload: WebhookPayload,
+        group: RuleGroup,
+        receivedAt: Long,
+        attempt: DeliveryLedger.Decision.Process,
+    ): Int {
+        val recordedAt = NoteContent.toLocalDateTime(payload.recordedAtMillis) ?: LocalDateTime.now()
+        val timing = Timing.Run("webhook")
+        val profile = settings.profile(group)
+        val store = if (profile.isAssigned) vaultStore(group) else null
+        val alreadyNotified = attempt.previous?.notified == true
+        val lastAttempt = attempt.attempt >= DeliveryLedger.MAX_ATTEMPTS
+
         val decision = timing.stage("classify") {
             config.ensureInitialised()
-            RoutingClassifier(config.rules()).classify(payload.transcript)
+            RoutingClassifier(config.rules()).classify(payload.transcript, group)
         }
         debug.event(
             context.getString(R.string.debug_stage_classified),
@@ -81,47 +160,115 @@ class RoutingPipeline(
             },
         )
 
-        // Audio first: if the note-writing step fails, the recording is still on
-        // disk and the transcript can be recovered by ear.
-        //
-        // Except for a dictation, which is explicitly ephemeral: keeping the
-        // recording would leave an m4a in the vault for the one route whose
-        // whole point is leaving nothing behind. That trades "recoverable by
-        // ear" for "leaves no trace", deliberately.
+        val action = decision.rule?.action
+        // The default route counts: an unmatched recording is a note in the inbox.
+        val needsVault = action == null || action == ActionType.FILE || action == ActionType.TASK
+        // A dictation keeps nothing, recording included; it is the one route
+        // whose point is leaving no trace. A timer keeps nothing either: the
+        // log row is its record, and a recording of "ten minutes" filed with
+        // no note to hang from is clutter, not evidence.
+        val keepsAudio = payload.audio != null && action !in ROUTES_WITHOUT_RECORDING
+        val audioFolder = profile.audioPathFor(recordedAt)
+        val noteFolder = when (action) {
+            ActionType.FILE -> profile.rulePath(decision.rule?.folder)
+            ActionType.TASK -> profile.taskPath()
+            null -> profile.fallbackPathFor(recordedAt)
+            else -> null
+        }
+
+        // Pre-flight: before anything is written, every folder this delivery
+        // needs is probed with a real write. A vault route that cannot be
+        // completed writes nothing and asks Pebble to resend, so a retry never
+        // finds half a delivery behind it.
+        val unreachable: String? = timing.stage("preflight") {
+            when {
+                !needsVault -> null
+                store == null -> UNASSIGNED
+                else -> listOfNotNull(noteFolder, audioFolder.takeIf { keepsAudio })
+                    .firstOrNull { !store.access(it).usable }
+            }
+        }
+        var notified = false
+        if (needsVault && unreachable != null) {
+            notified = alertUnreachable(group, unreachable, payload, alreadyNotified, lastAttempt)
+            return finishRow(
+                payload, group, decision, receivedAt, timing, attempt,
+                Outcome(STATUS_FAILED, error = unreachableError(group, unreachable, lastAttempt)),
+                audioPath = null, retry = !lastAttempt, notified = notified,
+            )
+        }
+
+        // Recording first, so a note that then fails to write is still
+        // recoverable by ear.
         val audioPath = timing.stage("audio") {
-            if (decision.rule?.action == ActionType.DICTATION) null else persistAudio(payload, recordedAt)
+            if (keepsAudio && store != null) persistAudio(store, profile, payload, recordedAt) else null
+        }
+        if (keepsAudio && audioPath == null && !needsVault) {
+            // A common route still fires when the gesture's vault is down: a
+            // timer does not need a vault. Only the recording is lost, and
+            // that is said out loud.
+            notified = true
+            Notifications.alert(
+                context,
+                context.getString(R.string.alert_audio_not_kept_title),
+                context.getString(
+                    R.string.alert_audio_not_kept_body,
+                    settings.groupName(group),
+                    action?.displayName.orEmpty(),
+                ),
+            )
         }
         debug.event(
             context.getString(R.string.debug_stage_audio),
             audioPath ?: context.getString(R.string.debug_audio_none),
         )
 
-        val result = try {
+        var result = try {
             timing.stage("dispatch") {
-            when (decision.rule?.action) {
-                ActionType.FILE -> fileNote(payload, decision, recordedAt, audioPath)
-                ActionType.TASK -> insertTask(payload, decision, recordedAt, audioPath)
-                ActionType.TIMER -> startTimer(payload, decision)
-                ActionType.CALENDAR -> insertCalendarEvent(payload, decision)
-                ActionType.DICTATION -> dictate(payload, decision)
-                null -> catchAll(payload, decision, recordedAt, audioPath)
-            }
+                when (action) {
+                    ActionType.FILE -> fileNote(store!!, profile, payload, decision, recordedAt, audioPath)
+                    ActionType.TASK -> insertTask(store!!, profile, payload, decision, recordedAt, audioPath)
+                    ActionType.TIMER -> startTimer(payload, decision)
+                    ActionType.CALENDAR -> insertCalendarEvent(payload, decision)
+                    ActionType.DICTATION -> dictate(payload, decision)
+                    null -> catchAll(store!!, profile, payload, recordedAt, audioPath)
+                }
             }
         } catch (t: Throwable) {
             Log.e(AppIdentity.LOG_TAG, "Routing failed", t)
-            Notifications.alert(
-                context,
-                context.getString(R.string.alert_route_failed_title),
-                context.getString(R.string.alert_route_failed_body, quotable(payload.transcript), t.message.orEmpty()),
-            )
+            // Did the vault go away mid-write, or is this a bug? Only the first
+            // is worth a resend, and only if nothing else has happened yet.
+            val vanished = needsVault && store != null && noteFolder != null && !store.access(noteFolder).usable
+            if (vanished && !lastAttempt) {
+                // Undo the recording so the resend does not leave a second
+                // copy under a collision suffix.
+                audioPath?.let { runCatching { store!!.delete(it) } }
+                notified = alertUnreachable(group, noteFolder!!, payload, alreadyNotified, lastAttempt = false)
+                return finishRow(
+                    payload, group, decision, receivedAt, timing, attempt,
+                    Outcome(STATUS_FAILED, error = unreachableError(group, noteFolder, lastAttempt = false)),
+                    audioPath = null, retry = true, notified = notified,
+                )
+            }
+            if (!alreadyNotified) {
+                Notifications.alert(
+                    context,
+                    context.getString(R.string.alert_route_failed_title),
+                    context.getString(R.string.alert_route_failed_body, quotable(payload.transcript), t.message.orEmpty()),
+                )
+            }
+            notified = true
             Outcome(status = STATUS_FAILED, error = t.message)
+        }
+        if (keepsAudio && audioPath == null && !needsVault && result.status == STATUS_SUCCESS) {
+            result = result.copy(error = listOfNotNull(result.error, "recording not kept: vault unreachable").joinToString("; "))
         }
 
         debug.event(
             context.getString(R.string.debug_stage_dispatched),
             context.getString(
                 R.string.debug_dispatched_detail,
-                decision.rule?.action?.displayName ?: context.getString(R.string.route_default_name),
+                action?.displayName ?: context.getString(R.string.route_default_name),
                 result.status,
                 result.targetPath ?: result.error ?: "—",
             ),
@@ -129,38 +276,130 @@ class RoutingPipeline(
 
         announceRoute(payload, decision, result)
 
-        // A folder written to for the first time gets its worked example, which
-        // is the moment it is most useful.
         timing.stage("sample") {
-            result.folderName?.let { runCatching { onFolderUsed(it) } }
+            result.folderName?.let { runCatching { onFolderUsed(group, it) } }
         }
+        // A vault that was written just now is reachable; if its common copy
+        // fell behind while it was not, this is the moment to catch it up.
+        if (needsVault && result.status != STATUS_FAILED) runCatching { config.catchUpStaleVaults() }
 
+        return finishRow(
+            payload, group, decision, receivedAt, timing, attempt, result,
+            audioPath = audioPath, retry = false, notified = notified,
+        )
+    }
+
+    /**
+     * Says a gesture's vault could not be used — once per delivery, not once
+     * per resend. Returns whether a notification was raised.
+     */
+    private fun alertUnreachable(
+        group: RuleGroup,
+        folder: String,
+        payload: WebhookPayload,
+        alreadyNotified: Boolean,
+        lastAttempt: Boolean,
+    ): Boolean {
+        val name = settings.groupName(group)
+        when {
+            lastAttempt -> Notifications.alert(
+                context,
+                context.getString(R.string.alert_group_gave_up_title, name),
+                context.getString(R.string.alert_group_gave_up_body, name, quotable(payload.transcript)),
+            )
+            alreadyNotified -> return false
+            folder == UNASSIGNED -> Notifications.alert(
+                context,
+                context.getString(R.string.alert_group_unassigned_title, name),
+                context.getString(R.string.alert_group_unassigned_body, name),
+            )
+            else -> Notifications.alert(
+                context,
+                context.getString(R.string.alert_group_unreachable_title, name),
+                context.getString(R.string.alert_group_unreachable_body, name, folder, quotable(payload.transcript)),
+            )
+        }
+        return true
+    }
+
+    private fun unreachableError(group: RuleGroup, folder: String, lastAttempt: Boolean): String {
+        val what = if (folder == UNASSIGNED) {
+            "no vault set for ${group.wireName}"
+        } else {
+            "no access to '$folder'"
+        }
+        return if (lastAttempt) "$what — not filed, Pebble's last attempt" else "$what — Pebble will resend"
+    }
+
+    /**
+     * Writes or updates the delivery's one log row, closes the ledger entry,
+     * and returns what to answer. A resend updates the row the first attempt
+     * wrote rather than adding another.
+     */
+    private suspend fun finishRow(
+        payload: WebhookPayload,
+        group: RuleGroup,
+        decision: RoutingDecision,
+        receivedAt: Long,
+        timing: Timing.Run,
+        attempt: DeliveryLedger.Decision.Process,
+        result: Outcome,
+        audioPath: String?,
+        retry: Boolean,
+        notified: Boolean,
+    ): Int {
         val durationMs = timing.finish()
+        val row = RoutingLogEntity(
+            durationMs = durationMs,
+            receivedAt = receivedAt,
+            recordedAt = payload.recordedAtMillis,
+            client = payload.client,
+            trigger = payload.trigger,
+            userAgent = payload.userAgent,
+            transcript = payload.transcript,
+            matchedRuleId = decision.rule?.id,
+            matchedKeyword = decision.matchedKeyword,
+            action = decision.rule?.action?.wireName,
+            outcome = result.status,
+            targetPath = result.targetPath,
+            audioPath = audioPath,
+            audioBytes = payload.audio?.bytes?.size ?: 0,
+            keywordStripped = decision.rule?.stripKeyword ?: false,
+            errorMessage = result.error,
+            ruleGroup = (decision.rule?.group ?: group).wireName,
+            vaultGroup = group.wireName,
+            deliveryId = payload.deliveryId,
+        )
+        val previousRow = attempt.previous?.logRowId?.let { logDao.byId(it) }
+        val rowId = if (previousRow != null) {
+            logDao.update(row.copy(id = previousRow.id))
+            previousRow.id
+        } else {
+            logDao.insert(row)
+        }
+        ledger.finish(payload.deliveryId, retry = retry, logRowId = rowId, notified = notified)
+        debug.event(
+            context.getString(R.string.debug_stage_logged),
+            context.getString(R.string.debug_logged_detail, result.status, durationMs),
+        )
+        return if (retry) HTTP_UNAVAILABLE else HTTP_OK
+    }
+
+    /** A row for a delivery that was never routed: a test event or a refusal. */
+    private suspend fun insertRow(payload: WebhookPayload, receivedAt: Long, status: String, error: String) {
         logDao.insert(
             RoutingLogEntity(
-                durationMs = durationMs,
                 receivedAt = receivedAt,
                 recordedAt = payload.recordedAtMillis,
                 client = payload.client,
                 trigger = payload.trigger,
                 userAgent = payload.userAgent,
                 transcript = payload.transcript,
-                matchedRuleId = decision.rule?.id,
-                matchedKeyword = decision.matchedKeyword,
-                action = decision.rule?.action?.wireName,
-                outcome = result.status,
-                targetPath = result.targetPath,
-                audioPath = audioPath,
+                outcome = status,
                 audioBytes = payload.audio?.bytes?.size ?: 0,
-                keywordStripped = decision.rule?.stripKeyword ?: false,
-                errorMessage = result.error,
+                errorMessage = error,
+                deliveryId = payload.deliveryId,
             ),
-        )
-        // Pruned where recordings arrive, which is where the log grows.
-        timing.stage("prune") { runCatching { logKeeper.prune() } }
-        debug.event(
-            context.getString(R.string.debug_stage_logged),
-            context.getString(R.string.debug_logged_detail, result.status, durationMs),
         )
     }
 
@@ -169,13 +408,7 @@ class RoutingPipeline(
      *
      * Each action type has its own notification channel, so the sound is theirs
      * to choose in Android's settings; this only decides whether anything is
-     * posted. Deliberately quiet by default — the app's whole value is that a
-     * note files itself without the phone being touched.
-     *
-     * Skipped when the route already raised its own notification: a timer that
-     * could not be launched directly hands the user a tap-to-start notification,
-     * and a second one saying "a timer was routed" is noise on top of the thing
-     * that actually needs the tap.
+     * posted. Skipped when the route already raised its own notification.
      */
     private fun announceRoute(
         payload: WebhookPayload,
@@ -184,14 +417,11 @@ class RoutingPipeline(
     ) {
         if (result.announced || result.status == STATUS_FAILED) return
         // What was said stays out of the notification unless asked for: a
-        // notification carrying it puts the words on the lock screen, readable
-        // by whoever picks the phone up.
+        // notification carrying it puts the words on the lock screen.
         val transcript = quotable(payload.transcript)
 
         val action = decision.rule?.action
         if (action == null) {
-            // The catch-all. On by default, because a recording that matched
-            // nothing is waiting for a decision rather than filed away.
             if (!settings.notifyFallback) return
             Notifications.route(
                 context,
@@ -221,31 +451,28 @@ class RoutingPipeline(
         val error: String? = null,
         /**
          * The logical folder this went to — a rule's folder or a reserved name —
-         * not the path it landed at. With date filing those differ: a note in
-         * `_Inbox/2026/08/21` belongs to `_Inbox`, and deriving the name from the
-         * path instead produced a folder called "21".
+         * not the path it landed at. With date filing those differ.
          */
         val folderName: String? = null,
-        /**
-         * The route has already put a notification in front of the user, so the
-         * per-route announcement would be a second one about the same recording.
-         */
+        /** The route already put a notification in front of the user. */
         val announced: Boolean = false,
     )
 
-    private fun persistAudio(payload: WebhookPayload, recordedAt: LocalDateTime): String? {
+    private fun persistAudio(
+        store: VaultStore,
+        profile: VaultProfile,
+        payload: WebhookPayload,
+        recordedAt: LocalDateTime,
+    ): String? {
         val clip = payload.audio ?: return null
-        val store = vaultStore() ?: return null
         return runCatching {
             // Prefix with a sortable stamp: the Pebble app's own filenames are
-            // opaque UUIDs and sort meaninglessly in a folder listing. Unique
-            // naming matters here — the stamp is minute-resolution, so two notes
-            // in the same minute would otherwise silently overwrite one another.
+            // opaque UUIDs and sort meaninglessly in a folder listing.
             val stamp = NoteContent.fileName("", recordedAt)
             val extension = clip.fileName.substringAfterLast('.', "m4a")
             val baseName = "$stamp ${clip.fileName.substringBeforeLast('.')}".trim()
             store.writeBytesUnique(
-                folderPath = settings.audioPathFor(recordedAt),
+                folderPath = profile.audioPathFor(recordedAt),
                 baseName = baseName,
                 extension = extension,
                 bytes = clip.bytes,
@@ -258,15 +485,14 @@ class RoutingPipeline(
     }
 
     private fun fileNote(
+        store: VaultStore,
+        profile: VaultProfile,
         payload: WebhookPayload,
         decision: RoutingDecision,
         recordedAt: LocalDateTime,
         audioPath: String?,
     ): Outcome {
-        val store = vaultStore() ?: return vaultMissing(payload, settings.fallbackPath())
-        val folder = settings.rulePath(decision.rule?.folder)
-        // Notes strip too now, when their rule says so — it used to be decided
-        // by action type, which could not be right for everyone's rules.
+        val folder = profile.rulePath(decision.rule?.folder)
         val text = stripKeyword(payload.transcript, decision)
         val note = NoteContent.build(
             transcript = text,
@@ -285,56 +511,48 @@ class RoutingPipeline(
         return Outcome(
             STATUS_SUCCESS,
             targetPath = path,
-            folderName = decision.rule?.folder?.takeIf { it.isNotBlank() } ?: settings.fallbackDirName,
+            folderName = decision.rule?.folder?.takeIf { it.isNotBlank() } ?: profile.fallbackDirName,
         )
     }
 
     /**
-     * Writes the task as its own file under the reserved task folder.
-     *
-     * It used to insert a line into the live daily note, which lost races against
-     * Obsidian's mobile sync — that file is edited by other devices and sync only
-     * runs while Obsidian is open. A new file is a single atomic write with no
-     * existing content to merge, and the daily note now pulls tasks in with a
-     * query instead. Nothing outside this app's own folder is written any more.
+     * Writes the task as its own file under the reserved task folder — a single
+     * atomic write with nothing to merge, where inserting into the live daily
+     * note lost races against Obsidian's mobile sync.
      */
     private fun insertTask(
+        store: VaultStore,
+        profile: VaultProfile,
         payload: WebhookPayload,
         decision: RoutingDecision,
         recordedAt: LocalDateTime,
         audioPath: String?,
     ): Outcome {
-        val store = vaultStore() ?: return vaultMissing(payload, settings.taskPath())
         val today = LocalDate.now()
         val text = stripKeyword(payload.transcript, decision)
-        // A rule's own tags win, so a "work task" route and a "home task" route
-        // can carry different hashtags. The setting is the fallback, not the law.
-        val tags = decision.rule?.tags?.takeIf { it.isNotEmpty() } ?: settings.taskTags
+        // A rule's own tags win; the vault's setting is the fallback.
+        val tags = decision.rule?.tags?.takeIf { it.isNotEmpty() } ?: profile.taskTags
         val line = TaskLineFormatter.format(
             transcript = text,
             createdOn = today,
             tags = tags,
-            includeCreatedDate = settings.taskCreatedDate,
+            includeCreatedDate = profile.taskCreatedDate,
         )
-
         val note = NoteContent.build(
             transcript = line,
             routedBy = decision.routedBy,
-            // Frontmatter tags mirror the task line, so a query can find these
-            // files by tag as well as by path.
             tags = tags,
             createdOn = today,
             recordedAt = recordedAt,
             audioFileName = audioPath?.substringAfterLast('/'),
             trigger = payload.trigger,
         )
-
         val path = store.writeTextUnique(
-            folderPath = settings.taskPath(),
+            folderPath = profile.taskPath(),
             baseName = NoteContent.fileName(text, recordedAt),
             contents = note,
         )
-        return Outcome(STATUS_SUCCESS, targetPath = path, folderName = settings.taskDirName)
+        return Outcome(STATUS_SUCCESS, targetPath = path, folderName = profile.taskDirName)
     }
 
     private fun startTimer(payload: WebhookPayload, decision: RoutingDecision): Outcome {
@@ -493,12 +711,12 @@ class RoutingPipeline(
     }
 
     private fun catchAll(
+        store: VaultStore,
+        profile: VaultProfile,
         payload: WebhookPayload,
-        decision: RoutingDecision,
         recordedAt: LocalDateTime,
         audioPath: String?,
     ): Outcome {
-        val store = vaultStore() ?: return vaultMissing(payload, settings.fallbackPath())
         val note = NoteContent.build(
             transcript = payload.transcript,
             routedBy = RoutingDecision.DEFAULT_ROUTE,
@@ -509,28 +727,11 @@ class RoutingPipeline(
             trigger = payload.trigger,
         )
         val path = store.writeTextUnique(
-            folderPath = settings.fallbackPathFor(recordedAt),
+            folderPath = profile.fallbackPathFor(recordedAt),
             baseName = NoteContent.fileName(payload.transcript, recordedAt),
             contents = note,
         )
-        // The notification for this route is raised by announceRoute, on the
-        // fallback channel, so its sound is the user's to choose like any other
-        // route's. It still defaults to on.
-        return Outcome(STATUS_FALLBACK, targetPath = path, folderName = settings.fallbackDirName)
-    }
-
-    /**
-     * Names the folder that could not be reached. Under Storage Scopes the fix is
-     * always "add this folder", so a message that does not say which folder is
-     * one the user cannot act on.
-     */
-    private fun vaultMissing(payload: WebhookPayload, folder: String): Outcome {
-        Notifications.alert(
-            context,
-            context.getString(R.string.alert_no_vault_title),
-            context.getString(R.string.alert_no_vault_body, folder, quotable(payload.transcript)),
-        )
-        return Outcome(STATUS_FAILED, error = "no access to '$folder'")
+        return Outcome(STATUS_FALLBACK, targetPath = path, folderName = profile.fallbackDirName)
     }
 
     /**
@@ -561,7 +762,13 @@ class RoutingPipeline(
             KeywordStripper.strip(transcript, decision.matchedKeyword)
         }
 
-    private companion object {
+    companion object {
+        /** Routes that never save the recording. Calendar still does, for now. */
+        val ROUTES_WITHOUT_RECORDING = setOf(ActionType.DICTATION, ActionType.TIMER)
+
+        /** Stands in for a folder name when the gesture has no vault at all. */
+        private const val UNASSIGNED = "\u0000unassigned"
+
         const val CALENDAR_EVENT_MIME = "vnd.android.cursor.dir/event"
 
         /**
@@ -584,5 +791,15 @@ class RoutingPipeline(
         const val STATUS_SUCCESS = "SUCCESS"
         const val STATUS_FALLBACK = "FALLBACK"
         const val STATUS_FAILED = "FAILED"
+
+        /** Pebble's "Send test event": logged as such, nothing routed. */
+        const val STATUS_TEST = "TEST"
+
+        /** No usable `X-Index-Trigger`: refused, nothing routed. */
+        const val STATUS_REJECTED = "REJECTED"
+
+        const val HTTP_OK = 200
+        const val HTTP_BAD_REQUEST = 400
+        const val HTTP_UNAVAILABLE = 503
     }
 }

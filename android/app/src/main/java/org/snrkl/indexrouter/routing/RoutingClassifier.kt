@@ -12,14 +12,25 @@ package org.snrkl.indexrouter.routing
  */
 class RoutingClassifier(private val rules: List<RoutingRule>) {
 
-    fun classify(transcript: String): RoutingDecision {
+    /**
+     * @param trigger the gesture that started the recording. The chain is the
+     *   common rules plus that gesture's own rules, as **one list ordered by
+     *   priority then id** — a group says which gestures a rule applies to,
+     *   not where it sits in the order. First match wins; no match falls to
+     *   the gesture's default route. The other gesture's rules are never
+     *   evaluated. Null evaluates every rule, for a single-group rule set.
+     */
+    fun classify(transcript: String, trigger: RuleGroup? = null): RoutingDecision {
         val haystack = normalise(transcript)
         val words = haystack.split(' ').filter { it.isNotBlank() }
 
-        val hit = rules
+        val ordered = rules
+            .filter { trigger == null || it.group == RuleGroup.COMMON || (trigger.isTrigger && it.group == trigger) }
+            .sortedWith(compareBy({ it.priority }, { it.id }))
+
+        val hit = ordered
             .asSequence()
             .filter { rule -> rule.enabled && rule.keywords.any { it.isNotBlank() } }
-            .sortedWith(compareBy({ it.priority }, { it.id }))
             .mapNotNull { rule ->
                 // Any of a rule's keywords matching is a match; which one it was
                 // is kept only so the note can record what fired.

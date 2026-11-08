@@ -42,6 +42,7 @@ import org.snrkl.indexrouter.ui.settings.SettingsScreen
 import org.snrkl.indexrouter.ui.settings.SettingsViewModel
 import org.snrkl.indexrouter.ui.theme.IndexRouterTheme
 import org.snrkl.indexrouter.vault.VaultPathResolver
+import org.snrkl.indexrouter.routing.RuleGroup
 
 /**
  * The app's one activity.
@@ -59,6 +60,9 @@ class MainActivity : ComponentActivity() {
     private var onVaultPicked: ((path: String?, treeUri: String?) -> Unit)? = null
     private var onBaseFolderPicked: ((String) -> Unit)? = null
     private var onRuleFolderPicked: ((String) -> Unit)? = null
+
+    /** The gesture whose vault a base- or rule-folder pick is relative to. */
+    private var pickingGroup: RuleGroup = RuleGroup.DOUBLE_CLICK_HOLD
 
     /** Shown over whatever screen asked for it. */
     private var fileAccessRequested by mutableStateOf(false)
@@ -92,7 +96,7 @@ class MainActivity : ComponentActivity() {
 
     private val pickBaseFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri ?: return@registerForActivityResult
-        val vaultRoot = container.settings.vaultRootPath
+        val vaultRoot = container.settings.profile(pickingGroup).vaultRootPath
         val absolute = VaultPathResolver.toFilesystemPath(
             DocumentsContract.getTreeDocumentId(uri),
             Environment.getExternalStorageDirectory().absolutePath,
@@ -120,7 +124,8 @@ class MainActivity : ComponentActivity() {
      */
     private val pickRuleFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri ?: return@registerForActivityResult
-        val vaultRoot = container.settings.vaultRootPath
+        val profile = container.settings.profile(pickingGroup)
+        val vaultRoot = profile.vaultRootPath
         if (vaultRoot == null) {
             toast(getString(R.string.rule_folder_needs_root))
             return@registerForActivityResult
@@ -130,7 +135,7 @@ class MainActivity : ComponentActivity() {
             Environment.getExternalStorageDirectory().absolutePath,
         )
         val relative = absolute?.let { VaultPathResolver.toVaultRelative(it, vaultRoot) }
-        val base = container.settings.baseDir.trim('/')
+        val base = profile.baseDir.trim('/')
         val inside = relative
             ?.takeIf { it == base || it.startsWith("$base/") }
             ?.removePrefix("$base/")
@@ -210,7 +215,8 @@ class MainActivity : ComponentActivity() {
                     // The system picker is what guarantees the chosen folder is
                     // inside the granted tree; the dropdown only offers what is
                     // already there.
-                    onChooseFolderFor = { onPicked ->
+                    onChooseFolderFor = { group, onPicked ->
+                        pickingGroup = group
                         onRuleFolderPicked = onPicked
                         pickRuleFolder.launch(null)
                     },
@@ -229,6 +235,7 @@ class MainActivity : ComponentActivity() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onChooseVault = {
+                        pickingGroup = vm.state.value.group
                         onVaultPicked = { path, treeUri ->
                             vm.applyVaultGrant(path, treeUri) {
                                 // A freshly granted vault with no base folder
@@ -242,6 +249,7 @@ class MainActivity : ComponentActivity() {
                         pickVault.launch(null)
                     },
                     onChooseBaseFolder = {
+                        pickingGroup = vm.state.value.group
                         onBaseFolderPicked = { relative -> vm.setBaseDir(relative) }
                         pickBaseFolder.launch(null)
                     },

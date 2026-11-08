@@ -2,6 +2,8 @@ package org.snrkl.indexrouter.data.config
 
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
+import org.snrkl.indexrouter.routing.ActionType
+import org.snrkl.indexrouter.routing.RuleGroup
 
 /**
  * Reads and writes the vault config file.
@@ -84,13 +86,42 @@ object ConfigCodec {
         // Up to 00.03.00 the settings and routing lived in the frontmatter. The
         // keys are identical either way, so the same parse reads both — the
         // version key is simply ignored where it sits alongside them.
-        val payload = decodePayload(block ?: frontmatter!!, fromBlock = block != null)
+        val source = block ?: frontmatter!!
+        val fromBlock = block != null
 
+        if (version >= ConfigVersion.PER_VAULT) {
+            val payload = decodeAs(ConfigPayload.serializer(), source, fromBlock)
+            val common = decodeAs(CommonProbe.serializer(), source, fromBlock).common
+            return ConfigDocument(
+                version = ConfigVersion.CURRENT.text,
+                layout = payload.settings,
+                routing = payload.routing,
+                common = common,
+            )
+        }
+
+        // One vault, one list. The rules that need no vault become the common
+        // copy; the rest are this vault's own. Device settings are handed back
+        // separately so the caller can take them in once.
+        val legacy = decodeAs(LegacyPayload.serializer(), source, fromBlock)
+        val (vaultRules, commonRules) = legacy.routing.partition { isVaultAction(it.action) }
         return ConfigDocument(
             version = ConfigVersion.CURRENT.text,
-            settings = payload.settings,
-            routing = payload.routing,
+            layout = legacy.settings.toLayout(),
+            routing = vaultRules,
+            common = commonRules,
+            legacySettings = legacy.settings,
         )
+    }
+
+    /**
+     * Whether a rule writes into a vault. An action this build does not know is
+     * kept with the vault's own rules, where the loader reports and skips it,
+     * rather than being copied into every vault as a common rule.
+     */
+    private fun isVaultAction(wire: String): Boolean {
+        val action = ActionType.fromWire(wire) ?: return true
+        return !RuleGroup.COMMON.allows(action)
     }
 
     fun encode(document: ConfigDocument): String {
@@ -114,8 +145,12 @@ object ConfigCodec {
         }
     }
 
-    private fun decodePayload(source: String, fromBlock: Boolean): ConfigPayload = try {
-        yaml.decodeFromString(ConfigPayload.serializer(), source)
+    private fun <T> decodeAs(
+        serializer: kotlinx.serialization.KSerializer<T>,
+        source: String,
+        fromBlock: Boolean,
+    ): T = try {
+        yaml.decodeFromString(serializer, source)
     } catch (t: Throwable) {
         val where = if (fromBlock) "the yaml block" else "the config frontmatter"
         throw ParseException(t.message ?: "Could not parse $where.", t)
@@ -150,8 +185,9 @@ object ConfigCodec {
         # Routing config
 
         Edit the block below, then use **Reload from vault** in the app to pull the
-        changes in. Everything the app knows lives there, in plain YAML, so it can
-        be read and edited here as text rather than through the properties editor.
+        changes in. It holds how this vault is filed and the rules that write into
+        it, in plain YAML, so it can be read and edited here as text rather than
+        through the properties editor.
 
         **In-app edits overwrite this file**, so a hand-edit made here is lost if
         the app writes before you reload it — the previous contents are kept in the
@@ -162,19 +198,19 @@ object ConfigCodec {
     private val BODY_FOOTER = """
         ## What the fields mean
 
-        - `base-dir` — the one folder the app writes inside. It never writes outside it.
+        - `base-dir` — the folder the app writes inside, in this vault. It never writes outside it.
         - `task-dir`, `fallback-dir`, `audio-dir` — reserved folders beneath it, always present.
         - `date-filing` — `none`, `month` or `day`: how deeply the inbox and recordings are filed by date.
-        - `notifications` — which routes announce themselves. Each route has its own
-          notification channel, so the *sound* for each is chosen in Android's own
-          settings, not here; this only decides whether the route notifies at all.
-          Failures always notify and are deliberately not listed.
-        - `routing` — the rules, in evaluation order. `priority` is lower-wins and only
-          matters when one recording matches two rules. Each rule's `folder` is a single
-          name resolved under `base-dir`, not a path.
+        - `routing` — the file and task rules that write into this vault, in evaluation
+          order. `priority` is lower-wins. Each rule's `folder` is a single name resolved
+          under `base-dir`, not a path. A recording that matches none of them goes to
+          `fallback-dir`.
+        - `common` — rules that need no vault: timer, calendar and dictation. They are
+          evaluated before the rules above. Kept here so a reinstall restores them.
 
         This file is also the config backup: after a reinstall, grant the vault folder
-        and reload to restore everything above. The webhook shared secret is
-        deliberately not stored here — regenerate it in the app.
+        and reload to restore everything above. The app's own settings (port,
+        notifications, privacy) and the webhook shared secret are deliberately not
+        stored here.
     """
 }

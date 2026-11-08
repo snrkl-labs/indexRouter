@@ -8,41 +8,95 @@ import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.CalendarMode
 
 /**
- * The vault-side representation of everything the app knows, minus the shared
- * secret, and the config backup across a reinstall.
+ * One vault's config file, decoded.
  *
- * Format version `00.04.00` (see [ConfigVersion]): the settings and routing
- * table moved out of the YAML frontmatter and into a fenced `yaml` block in the
- * note body. Obsidian renders frontmatter through its properties editor, which
- * is the least hand-editable surface it has — and hand-editing this file is the
- * entire reason it lives in the vault. A fenced block is plain text.
+ * Format `00.05.00` (see [ConfigVersion]). Each vault holds its own file, and
+ * it describes that vault and nothing else:
+ *
+ * - [layout]: how the vault is filed — base folder, reserved folders, date
+ *   filing, map retention, task tags.
+ * - [routing]: the file and task rules of the gesture that writes here.
+ * - [common]: a copy of the rules that need no vault, so a reinstall restores
+ *   them from whichever vault is granted first.
+ *
+ * It never holds the gesture mapping, another vault's name, path or rules, or
+ * the device's own settings. A vault synced somewhere else must not learn
+ * anything about another vault by reading this file.
+ *
+ * The settings and rules live in a fenced `yaml` block in the note body rather
+ * than the frontmatter: Obsidian's properties editor is the least
+ * hand-editable surface it has, and hand-editing is why the file is in the
+ * vault.
  */
-@Serializable
 data class ConfigDocument(
-    /**
-     * Bumped when the meaning of a field changes. A v1 file is not upgraded in
-     * place — it is ignored with a notification, and the app starts from bundled
-     * defaults, because v1's `folder` values are vault-root paths whose meaning
-     * has changed and quietly reinterpreting them would write to the wrong place.
-     */
     val version: String = ConfigVersion.CURRENT.text,
-    val settings: SettingsBlock = SettingsBlock(),
+    val layout: LayoutBlock = LayoutBlock(),
     val routing: List<RuleBlock> = emptyList(),
+    /**
+     * The common rules. Null when the file had no `common` key at all, which
+     * is not the same as an empty list: an empty list is a decision to have no
+     * common rules, a missing key is simply silence.
+     */
+    val common: List<RuleBlock>? = null,
+    /**
+     * Everything a pre-`00.05.00` file carried in its settings block, device
+     * settings included. Read once, on conversion; never written.
+     */
+    val legacySettings: SettingsBlock? = null,
 ) {
-    fun payload() = ConfigPayload(settings = settings, routing = routing)
+    fun payload() = ConfigPayload(settings = layout, routing = routing, common = common.orEmpty())
 }
 
-/**
- * What actually goes in the body's fenced block: the part worth hand-editing.
- *
- * Separate from [ConfigDocument] because the version belongs in the
- * frontmatter, where a reader — human or machine — sees it before parsing
- * anything else.
- */
+/** What goes in the body's fenced block. */
 @Serializable
 data class ConfigPayload(
+    val settings: LayoutBlock = LayoutBlock(),
+    val routing: List<RuleBlock> = emptyList(),
+    val common: List<RuleBlock> = emptyList(),
+)
+
+/** The fenced block of a file written before `00.05.00`: one vault, everything in it. */
+@Serializable
+data class LegacyPayload(
     val settings: SettingsBlock = SettingsBlock(),
     val routing: List<RuleBlock> = emptyList(),
+)
+
+/** Reads the `common` key's presence without trusting a default. */
+@Serializable
+data class CommonProbe(
+    val common: List<RuleBlock>? = null,
+)
+
+/**
+ * How one vault is filed. The `settings:` key of a `00.05.00` file.
+ *
+ * Device settings — port, notifications, privacy, voice input, calendar
+ * hand-off — are deliberately absent: with two vaults each would hold a copy,
+ * and copies diverge. They live in the app.
+ */
+@Serializable
+data class LayoutBlock(
+    /** The folder everything for this vault is written under. May have several segments. */
+    @SerialName("base-dir") val baseDir: String = "_RingRing",
+    @SerialName("task-dir") val taskDir: String = "_Tasks",
+    @SerialName("fallback-dir") val fallbackDir: String = "_Inbox",
+    @SerialName("audio-dir") val audioDir: String = "_Audio",
+    @SerialName("task-tags") val taskTags: List<String> = listOf("#task", "#index"),
+    @SerialName("task-created-date") val taskCreatedDate: Boolean = true,
+    @SerialName("moc-backup-retention") val mocBackupRetention: Int = 5,
+    @SerialName("date-filing") val dateFiling: String = "day",
+)
+
+fun SettingsBlock.toLayout() = LayoutBlock(
+    baseDir = baseDir,
+    taskDir = taskDir,
+    fallbackDir = fallbackDir,
+    audioDir = audioDir,
+    taskTags = taskTags,
+    taskCreatedDate = taskCreatedDate,
+    mocBackupRetention = mocBackupRetention,
+    dateFiling = dateFiling,
 )
 
 /**
@@ -64,7 +118,10 @@ data class ConfigVersion(val major: Int, val minor: Int, val patch: Int) : Compa
 
     companion object {
         /** What this build writes. */
-        val CURRENT = ConfigVersion(0, 4, 0)
+        val CURRENT = ConfigVersion(0, 5, 0)
+
+        /** The first format with one file per vault and a `common` block. */
+        val PER_VAULT = ConfigVersion(0, 5, 0)
 
         /**
          * Oldest format still readable. `00.02.00` and later are read and
@@ -93,6 +150,10 @@ data class ConfigVersion(val major: Int, val minor: Int, val patch: Int) : Compa
     }
 }
 
+/**
+ * The settings block of a file written before `00.05.00`, when there was one
+ * vault and its file carried the device settings too. Read, never written.
+ */
 @Serializable
 data class SettingsBlock(
     /** The one path the user picks. Everything the app writes lives under it. */

@@ -37,6 +37,14 @@ interface RoutingRuleDao {
 
     @Query("DELETE FROM routing_rules")
     suspend fun clear()
+
+    /** The carried-over vault's rules join the gesture it was given to. */
+    @Query("UPDATE routing_rules SET groupId = :to WHERE groupId = :from")
+    suspend fun moveGroup(from: String, to: String): Int
+
+    /** Reloading one vault replaces that vault's group and nothing else. */
+    @Query("DELETE FROM routing_rules WHERE groupId = :groupId")
+    suspend fun clearGroup(groupId: String)
 }
 
 @Dao
@@ -58,6 +66,34 @@ interface RoutingLogDao {
             "WHERE id = :id",
     )
     suspend fun markRerouted(id: Long, action: String, targetPath: String)
+
+    /**
+     * A cross-vault move: the files now live in the other gesture's vault, and
+     * the row records where the item came from and went to.
+     */
+    @Query(
+        "UPDATE routing_log SET manuallyRouted = 1, action = :action, targetPath = :targetPath, " +
+            "audioPath = :audioPath, vaultGroup = :toGroup, reroutedFromGroup = :fromGroup, " +
+            "reroutedToGroup = :toGroup WHERE id = :id",
+    )
+    suspend fun markMovedAcrossVaults(
+        id: Long,
+        action: String,
+        targetPath: String,
+        audioPath: String?,
+        fromGroup: String,
+        toGroup: String,
+    )
+
+    @androidx.room.Update
+    suspend fun update(entry: RoutingLogEntity)
+
+    /** The carried-over vault was given to a gesture: its rows now live in that gesture's vault. */
+    @Query("UPDATE routing_log SET vaultGroup = :to WHERE vaultGroup = :from")
+    suspend fun moveVaultGroup(from: String, to: String): Int
+
+    @Query("UPDATE routing_log SET ruleGroup = :to WHERE ruleGroup = :from")
+    suspend fun moveRuleGroup(from: String, to: String): Int
 
     @Query("SELECT * FROM routing_log WHERE id = :id")
     suspend fun byId(id: Long): RoutingLogEntity?
@@ -119,3 +155,20 @@ interface RoutingLogDao {
     @Query("DELETE FROM routing_log WHERE isMarker = 1 AND receivedAt < :cutoff")
     suspend fun deleteMarkersOlderThan(cutoff: Long): Int
 }
+
+@Dao
+interface DeliveryDao {
+
+    @Query("SELECT * FROM deliveries WHERE deliveryId = :id")
+    suspend fun byId(id: String): DeliveryEntity?
+
+    @Upsert
+    suspend fun upsert(delivery: DeliveryEntity)
+
+    @Query("DELETE FROM deliveries WHERE firstSeenAt < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long): Int
+
+    @Query("SELECT COUNT(*) FROM deliveries")
+    suspend fun count(): Int
+}
+

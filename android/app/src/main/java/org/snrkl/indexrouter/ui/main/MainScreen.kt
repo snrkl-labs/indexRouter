@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.snrkl.indexrouter.R
+import org.snrkl.indexrouter.ui.common.CommonConflictDialog
 import org.snrkl.indexrouter.ui.common.OnResume
 import java.text.DateFormat
 import java.util.Date
@@ -93,6 +94,29 @@ internal fun MainScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // After an upgrade, or a reinstall, neither gesture has a vault.
+            // Said first, because until it is fixed nothing is filed.
+            if (state.vaults.any { !it.assigned }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(R.string.first_run_assign_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            stringResource(R.string.first_run_assign_body),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Button(onClick = onOpenSettings) { Text(stringResource(R.string.action_open_triggers)) }
+                    }
+                }
+            }
+
             StatusCard(state)
 
             Button(
@@ -132,6 +156,15 @@ internal fun MainScreen(
                 Text(stringResource(R.string.action_settings))
             }
         }
+    }
+
+    val conflict by viewModel.commonConflict.collectAsStateWithLifecycle()
+    conflict?.let {
+        CommonConflictDialog(
+            groupName = viewModel.groupName(it.group),
+            onUseVault = { viewModel.resolveCommonConflict(useVault = true) },
+            onKeepApp = { viewModel.resolveCommonConflict(useVault = false) },
+        )
     }
 
     if (showMoc) {
@@ -182,36 +215,12 @@ private fun StatusCard(state: MainUiState) {
                 ok = state.receiverRunning,
             )
             StatusLine(
-                text = state.vaultDescription
-                    ?.let { stringResource(R.string.status_vault_granted, it) }
-                    ?: stringResource(R.string.status_vault_missing),
-                ok = state.vaultDescription != null,
-            )
-            StatusLine(stringResource(R.string.status_base_dir, state.baseDir), ok = true)
-            if (state.blockedFolders > 0) {
-                StatusLine(stringResource(R.string.status_vault_blocked, state.blockedFolders), ok = false)
-            }
-            StatusLine(
                 text = if (state.hasSecret) stringResource(R.string.status_secret_set)
                 else stringResource(R.string.status_secret_missing),
                 ok = state.hasSecret,
             )
             StatusLine(stringResource(R.string.status_rules, state.ruleCount), ok = true)
-            StatusLine(
-                text = if (state.lastSyncedAt == 0L) {
-                    stringResource(R.string.status_never_synced)
-                } else {
-                    stringResource(
-                        R.string.status_last_synced,
-                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                            .format(Date(state.lastSyncedAt)),
-                    )
-                },
-                ok = state.lastSyncedAt != 0L,
-            )
-            if (state.usingFallbackConfig) {
-                StatusLine(stringResource(R.string.status_using_fallback), ok = false)
-            }
+            state.vaults.forEach { vault -> VaultStatusLines(vault) }
             StatusLine(
                 text = if (state.canLaunchFromBackground) {
                     stringResource(R.string.status_background_launch_ok)
@@ -221,6 +230,51 @@ private fun StatusCard(state: MainUiState) {
                 ok = state.canLaunchFromBackground,
             )
         }
+    }
+}
+
+/**
+ * One gesture's vault. Each gesture is named, because "vault missing" means
+ * nothing when there are two.
+ */
+@Composable
+private fun VaultStatusLines(vault: VaultStatus) {
+    Text(
+        text = vault.name,
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+    if (!vault.assigned) {
+        StatusLine(stringResource(R.string.status_vault_unassigned), ok = false)
+        return
+    }
+    StatusLine(
+        text = vault.description
+            ?.let { stringResource(R.string.status_vault_granted, it) }
+            ?: stringResource(R.string.status_vault_missing),
+        ok = vault.description != null,
+    )
+    StatusLine(stringResource(R.string.status_base_dir, vault.baseDir), ok = true)
+    if (vault.blockedFolders > 0) {
+        StatusLine(stringResource(R.string.status_vault_blocked, vault.blockedFolders), ok = false)
+    }
+    StatusLine(
+        text = if (vault.lastSyncedAt == 0L) {
+            stringResource(R.string.status_never_synced)
+        } else {
+            stringResource(
+                R.string.status_last_synced,
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(Date(vault.lastSyncedAt)),
+            )
+        },
+        ok = vault.lastSyncedAt != 0L,
+    )
+    if (vault.usingFallbackConfig) {
+        StatusLine(stringResource(R.string.status_using_fallback), ok = false)
+    }
+    if (vault.commonStale) {
+        StatusLine(stringResource(R.string.status_common_stale), ok = false)
     }
 }
 

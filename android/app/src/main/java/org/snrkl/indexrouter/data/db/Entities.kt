@@ -46,6 +46,8 @@ data class RoutingRuleEntity(
      * said.
      */
     @ColumnInfo(defaultValue = "1") val stripKeyword: Boolean = true,
+    /** `common`, or the gesture whose vault this rule writes into. See RuleGroup. */
+    @ColumnInfo(defaultValue = "common") val groupId: String = "common",
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
@@ -55,7 +57,10 @@ data class RoutingRuleEntity(
  * Timer and calendar actions leave no trace in the vault at all, so for those
  * this table is the only evidence the note ever existed.
  */
-@Entity(tableName = "routing_log", indices = [Index(value = ["receivedAt"])])
+@Entity(
+    tableName = "routing_log",
+    indices = [Index(value = ["receivedAt"]), Index(value = ["deliveryId"])],
+)
 data class RoutingLogEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val receivedAt: Long,
@@ -112,4 +117,44 @@ data class RoutingLogEntity(
      */
     @ColumnInfo(defaultValue = "0") val isMarker: Boolean = false,
     val errorMessage: String? = null,
+    /** The group the matched rule belongs to — `common` or a gesture. Null on a marker. */
+    val ruleGroup: String? = null,
+    /**
+     * The gesture whose vault holds this row's files, if any. Usually the
+     * trigger, but kept separately: rows from before there were two vaults all
+     * live in the one vault the install had, whichever gesture sent them.
+     */
+    val vaultGroup: String? = null,
+    /** `X-Index-Delivery`, so a retried delivery updates this row rather than adding one. */
+    val deliveryId: String? = null,
+    /** Set by a cross-vault re-route: the group the item left, and the one it went to. */
+    val reroutedFromGroup: String? = null,
+    val reroutedToGroup: String? = null,
 )
+
+/**
+ * Pebble's delivery ids, seen recently, and what became of each.
+ *
+ * Deliberately **not** the routing log: it holds no content at all, and
+ * clearing the log must not empty it, or a retry arriving just after a clear
+ * would be filed a second time. Kept 24 hours.
+ */
+@Entity(tableName = "deliveries")
+data class DeliveryEntity(
+    @PrimaryKey val deliveryId: String,
+    val firstSeenAt: Long,
+    val updatedAt: Long,
+    /** IN_PROGRESS while being handled; RETRY after a 5xx; DONE once final. */
+    val state: String,
+    val attempts: Int = 1,
+    /** The log row this delivery owns, so a retry updates it. */
+    val logRowId: Long? = null,
+    /** Whether the failure notification has been raised — once per delivery, not per retry. */
+    val notified: Boolean = false,
+) {
+    companion object {
+        const val IN_PROGRESS = "IN_PROGRESS"
+        const val RETRY = "RETRY"
+        const val DONE = "DONE"
+    }
+}

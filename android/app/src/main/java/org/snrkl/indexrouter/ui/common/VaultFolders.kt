@@ -2,7 +2,7 @@ package org.snrkl.indexrouter.ui.common
 
 import android.content.Context
 import org.snrkl.indexrouter.R
-import org.snrkl.indexrouter.data.prefs.SettingsStore
+import org.snrkl.indexrouter.data.prefs.VaultProfile
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.RoutingRule
 
@@ -18,7 +18,7 @@ import org.snrkl.indexrouter.routing.RoutingRule
 internal object VaultFolders {
 
     /** Reserved folders, present on every install regardless of the rules. */
-    fun core(context: Context, settings: SettingsStore): List<Pair<String, String>> = listOf(
+    fun core(context: Context, settings: VaultProfile): List<Pair<String, String>> = listOf(
         settings.baseDir to context.getString(R.string.vault_reason_config),
         settings.audioPath() to context.getString(R.string.vault_reason_audio),
         settings.taskPath() to context.getString(R.string.vault_reason_tasks),
@@ -28,10 +28,12 @@ internal object VaultFolders {
     /** One folder per file rule, named after the rule that needs it. */
     fun forRules(
         context: Context,
-        settings: SettingsStore,
+        settings: VaultProfile,
         rules: List<RoutingRule>,
     ): List<Pair<String, String>> = rules.mapNotNull { rule ->
-        if (rule.action != ActionType.FILE) return@mapNotNull null
+        // Only this vault's gesture: the other gesture's folders are in a
+        // different vault and are that vault's question.
+        if (rule.action != ActionType.FILE || rule.group != settings.group) return@mapNotNull null
         rule.folder?.takeIf { it.isNotBlank() }?.let { folder ->
             settings.rulePath(folder) to
                 context.getString(R.string.vault_reason_rule, rule.keywords.firstOrNull().orEmpty())

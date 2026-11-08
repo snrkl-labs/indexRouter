@@ -120,4 +120,17 @@ class FileVaultStoreTest {
         val (vault, _) = store()
         assertEquals(null, vault.readText("_Daily Notes/2026/08/2026-08-18.md"))
     }
+
+    @Test
+    fun `a vault that is not there is never recreated`() {
+        // Unmounted, moved or revoked: writing must fail rather than build an
+        // empty look-alike of the vault that sync would never see.
+        val missing = java.io.File(temp.root, "GoneVault")
+        val store = FileVaultStore(missing)
+        val failed = runCatching {
+            store.writeBytesUnique("_RingRing/_Audio", "clip", "m4a", byteArrayOf(1), "audio/mp4")
+        }.isFailure
+        org.junit.Assert.assertTrue(failed)
+        org.junit.Assert.assertFalse(missing.exists())
+    }
 }

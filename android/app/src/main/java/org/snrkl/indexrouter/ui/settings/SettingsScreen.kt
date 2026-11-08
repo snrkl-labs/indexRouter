@@ -1,5 +1,12 @@
 package org.snrkl.indexrouter.ui.settings
 
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
+import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.ui.common.CommonConflictDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,6 +101,15 @@ internal fun SettingsScreen(
     // which reads as the fix not having worked.
     OnResume { viewModel.refresh(hasAllFilesAccess()) }
 
+    val conflict by viewModel.commonConflict.collectAsStateWithLifecycle()
+    conflict?.let {
+        CommonConflictDialog(
+            groupName = state.groupNames[it.group] ?: it.group.defaultName,
+            onUseVault = { viewModel.resolveCommonConflict(useVault = true) },
+            onKeepApp = { viewModel.resolveCommonConflict(useVault = false) },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -115,6 +131,14 @@ internal fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Each gesture has its own vault, and the three cards below it —
+            // vault, folders, tasks — describe whichever one is selected here.
+            GestureSelector(
+                selected = state.group,
+                names = state.groupNames,
+                onSelect = viewModel::selectGroup,
+            )
+
             // The vault is granted, not chosen, so it takes the outlined card
             // the rules screen uses for the things that are not choices.
             OutlinedCard {
@@ -124,6 +148,28 @@ internal fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
+                if (!state.vaultAssigned) {
+                    Text(
+                        text = stringResource(R.string.settings_vault_unassigned),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+                if (!state.vaultAssigned && state.carriedOverPath != null) {
+                    FilledTonalButton(
+                        onClick = viewModel::useCarriedOver,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.settings_use_carried_over,
+                                state.carriedOverPath.orEmpty().substringAfterLast('/'),
+                                state.groupNames[state.group] ?: state.group.defaultName,
+                            ),
+                        )
+                    }
+                }
                 CardValueRow(
                     label = stringResource(R.string.settings_vault_root),
                     value = when (state.storageMode) {
@@ -152,6 +198,11 @@ internal fun SettingsScreen(
                     },
                 )
                 FolderChecklist(state)
+                if (state.vaultAssigned) {
+                    TextButton(onClick = viewModel::unassignVault) {
+                        Text(stringResource(R.string.action_unassign_vault))
+                    }
+                }
             }
 
             SettingCard(stringResource(R.string.settings_group_folders)) {
@@ -635,4 +686,35 @@ private fun bodyFor(setting: TextSetting) = when (setting) {
     is TextSetting.VoiceBuffer -> R.string.settings_voice_buffer_body
     is TextSetting.CalendarPackage -> R.string.settings_calendar_package_body
     is TextSetting.LogRetention -> R.string.settings_log_retention_body
+}
+
+/**
+ * Which gesture's vault the cards below describe. A segmented button: two
+ * mutually exclusive choices, always visible, named rather than coloured.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GestureSelector(
+    selected: RuleGroup,
+    names: Map<RuleGroup, String>,
+    onSelect: (RuleGroup) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = stringResource(R.string.settings_vault_for),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            RuleGroup.TRIGGERS.forEachIndexed { index, group ->
+                SegmentedButton(
+                    selected = group == selected,
+                    onClick = { onSelect(group) },
+                    shape = SegmentedButtonDefaults.itemShape(index, RuleGroup.TRIGGERS.size),
+                ) {
+                    Text(names[group] ?: group.defaultName, maxLines = 1)
+                }
+            }
+        }
+    }
 }

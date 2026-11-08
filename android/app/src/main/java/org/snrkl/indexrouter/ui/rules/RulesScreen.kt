@@ -1,5 +1,11 @@
 package org.snrkl.indexrouter.ui.rules
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.ui.res.pluralStringResource
+import org.snrkl.indexrouter.routing.RuleGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,10 +81,12 @@ internal fun RulesScreen(
     viewModel: RulesViewModel,
     onBack: () -> Unit,
     onOpenPermissions: () -> Unit,
-    onChooseFolderFor: (onPicked: (String) -> Unit) -> Unit,
+    onChooseFolderFor: (group: RuleGroup, onPicked: (String) -> Unit) -> Unit,
 ) {
     val rules by viewModel.displayedRules.collectAsStateWithLifecycle()
-    val folders by viewModel.folderOptions.collectAsStateWithLifecycle()
+    val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
+    val headers by viewModel.headers.collectAsStateWithLifecycle()
+    var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     val message by viewModel.messages.collectAsStateWithLifecycle()
     val folderWarning by viewModel.folderWarning.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -97,6 +105,7 @@ internal fun RulesScreen(
         isDraggable = { it.key is Long },
         onMove = viewModel::moveRule,
         onSettled = viewModel::commitOrder,
+        canDrop = viewModel::sameGroup,
     )
 
     LaunchedEffect(message) {
@@ -131,115 +140,133 @@ internal fun RulesScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(rules, key = { it.id }) { rule ->
-                val dragging = reorder.draggingKey == rule.id
-                Box(
-                    modifier = Modifier
-                        .zIndex(if (dragging) 1f else 0f)
-                        .offset { IntOffset(0, reorder.offsetFor(rule.id).toInt()) },
-                ) {
-                RuleCard(
-                    rule = rule,
-                    expanded = expandedId == rule.id,
-                    folderOptions = folders,
-                    resolvedFolder = viewModel::resolvedFolder,
-                    fixedFolderFor = viewModel::fixedFolderFor,
-                    inheritedTags = viewModel.taskTags.joinToString(", "),
-                    onExpandToggle = {
-                        expandedId = if (expandedId == rule.id) null else rule.id
-                    },
-                    onChange = viewModel::saveInline,
-                    onDelete = { viewModel.delete(rule.id) },
-                    onChooseFolder = {
-                        onChooseFolderFor { segment ->
-                            viewModel.saveInline(rule.copy(folder = segment))
-                        }
-                    },
-                    onMore = { moreFor = rule },
-                    handle = {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = stringResource(R.string.rule_reorder_handle),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .size(24.dp)
-                                .reorderHandle(reorder, rule.id),
-                        )
-                    },
-                )
-                }
-            }
-
-            item {
-                // Distinct on purpose: these two are not rules. The default is
-                // what happens when nothing matched, and recordings happen
-                // whatever matched, so neither has a keyword, a priority or a
-                // place in the order.
-                FixedCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BoldLabel(stringResource(R.string.rule_label_action))
-                        StaticPill(stringResource(R.string.rule_default_title))
-                        Box(modifier = Modifier.weight(1f))
-                        BoldLabel(stringResource(R.string.rule_label_priority))
-                        StaticPill(stringResource(R.string.rule_default_title))
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp),
-                    ) {
-                        BoldLabel(stringResource(R.string.rule_label_folder))
-                        ReservedFolderDropdown(
-                            current = viewModel.fallbackDirName,
-                            options = folders,
-                            resolved = viewModel::resolvedFolder,
-                            onPick = viewModel::saveDefaultRoute,
-                            onChoose = { onChooseFolderFor(viewModel::saveDefaultRoute) },
-                        )
-                    }
-                }
-            }
-
-            item {
-                FixedCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BoldLabel(stringResource(R.string.rule_recordings_label))
-                        ReservedFolderDropdown(
-                            current = viewModel.audioDirName,
-                            options = folders,
-                            resolved = viewModel::resolvedFolder,
-                            onPick = viewModel::saveAudioFolder,
-                            onChoose = { onChooseFolderFor(viewModel::saveAudioFolder) },
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.rule_always_subtitle, viewModel.audioPath),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
+            // One list, in the order it is evaluated: the common group, then
+            // each gesture's own rules, its default route and its recordings.
+            RuleGroup.entries.forEach { group ->
+                val isCollapsed = group.wireName in collapsed
+                val inGroup = rules.filter { it.group == group }
+                val folders = folderOptions[group].orEmpty()
+                // The carried-over vault appears only while it has rules waiting.
+                if (group == RuleGroup.CARRIED_OVER && inGroup.isEmpty()) return@forEach
+                item(key = "header-${group.wireName}") {
+                    GroupHeaderRow(
+                        name = headers[group]?.name ?: group.defaultName,
+                        vault = headers[group]?.vault,
+                        group = group,
+                        count = inGroup.size,
+                        collapsed = isCollapsed,
+                        onToggle = {
+                            collapsed = if (isCollapsed) collapsed - group.wireName else collapsed + group.wireName
+                        },
+                        onAdd = {
+                            collapsed = collapsed - group.wireName
+                            viewModel.addRule(group) { expandedId = it }
+                        },
                     )
                 }
+                if (isCollapsed) return@forEach
+
+                items(inGroup, key = { it.id }) { rule ->
+                    val dragging = reorder.draggingKey == rule.id
+                    Box(
+                        modifier = Modifier
+                            .zIndex(if (dragging) 1f else 0f)
+                            .offset { IntOffset(0, reorder.offsetFor(rule.id).toInt()) },
+                    ) {
+                        RuleCard(
+                            rule = rule,
+                            expanded = expandedId == rule.id,
+                            folderOptions = folders,
+                            resolvedFolder = { viewModel.resolvedFolder(group, it) },
+                            fixedFolderFor = { viewModel.fixedFolderFor(group, it) },
+                            inheritedTags = if (group.isTrigger) {
+                                viewModel.profile(group).taskTags.joinToString(", ")
+                            } else {
+                                ""
+                            },
+                            onExpandToggle = {
+                                expandedId = if (expandedId == rule.id) null else rule.id
+                            },
+                            onChange = viewModel::saveInline,
+                            onDelete = { viewModel.delete(rule.id) },
+                            onChooseFolder = {
+                                onChooseFolderFor(group) { segment ->
+                                    viewModel.saveInline(rule.copy(folder = segment))
+                                }
+                            },
+                            onMore = { moreFor = rule },
+                            handle = {
+                                Icon(
+                                    imageVector = Icons.Filled.Menu,
+                                    contentDescription = stringResource(R.string.rule_reorder_handle),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .size(24.dp)
+                                        .reorderHandle(reorder, rule.id),
+                                )
+                            },
+                        )
+                    }
+                }
+
+                if (!group.isTrigger) return@forEach
+                val profile = viewModel.profile(group)
+
+                item(key = "default-${group.wireName}") {
+                    // Distinct on purpose: these two are not rules. The default
+                    // is what happens when nothing matched, and recordings
+                    // happen whatever matched, so neither has a keyword, a
+                    // priority or a place in the order.
+                    FixedCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BoldLabel(stringResource(R.string.rule_label_action))
+                            StaticPill(stringResource(R.string.rule_default_title))
+                            Box(modifier = Modifier.weight(1f))
+                            BoldLabel(stringResource(R.string.rule_label_priority))
+                            StaticPill(stringResource(R.string.rule_default_title))
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) {
+                            BoldLabel(stringResource(R.string.rule_label_folder))
+                            ReservedFolderDropdown(
+                                current = profile.fallbackDirName,
+                                options = folders,
+                                resolved = { viewModel.resolvedFolder(group, it) },
+                                onPick = { viewModel.saveDefaultRoute(group, it) },
+                                onChoose = { onChooseFolderFor(group) { viewModel.saveDefaultRoute(group, it) } },
+                            )
+                        }
+                    }
+                }
+
+                item(key = "audio-${group.wireName}") {
+                    FixedCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BoldLabel(stringResource(R.string.rule_recordings_label))
+                            ReservedFolderDropdown(
+                                current = profile.audioDirName,
+                                options = folders,
+                                resolved = { viewModel.resolvedFolder(group, it) },
+                                onPick = { viewModel.saveAudioFolder(group, it) },
+                                onChoose = { onChooseFolderFor(group) { viewModel.saveAudioFolder(group, it) } },
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.rule_always_subtitle, profile.audioPath()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
             }
 
-            // Room for the button not to sit on top of the last card.
-            item { Box(modifier = Modifier.size(72.dp)) }
+            item { Box(modifier = Modifier.size(24.dp)) }
         }
 
-        // Centred, as drawn, rather than in the usual corner.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(bottom = 16.dp),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            FloatingActionButton(
-                onClick = { viewModel.addRule { expandedId = it } },
-                shape = FloatingActionButtonDefaults.largeShape,
-            ) {
-                Icon(Icons.Filled.Add, stringResource(R.string.rules_add))
-            }
-        }
     }
 
     moreFor?.let { rule ->
@@ -458,6 +485,68 @@ private fun ReservedFolderDropdown(
                     onChoose()
                 },
             )
+        }
+    }
+}
+
+/**
+ * A group's header: its name, what it writes to, and its own add action.
+ *
+ * Each group adds its own rules so a new rule can only ever be a type that
+ * group allows — a note rule cannot be created among the common ones, where it
+ * would have no vault to write to.
+ */
+@Composable
+private fun GroupHeaderRow(
+    name: String,
+    vault: String?,
+    group: RuleGroup,
+    count: Int,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(top = 8.dp),
+    ) {
+        Icon(
+            imageVector = if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+            contentDescription = stringResource(if (collapsed) R.string.group_expand else R.string.group_collapse),
+        )
+        Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = when {
+                    group == RuleGroup.CARRIED_OVER -> stringResource(R.string.group_carried_over_sub)
+                    !group.isTrigger -> stringResource(R.string.group_common_sub)
+                    vault != null -> stringResource(R.string.group_vault_sub, vault)
+                    else -> stringResource(R.string.group_no_vault_sub)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (group.hasVault && vault == null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            if (collapsed) {
+                Text(
+                    text = pluralStringResource(R.plurals.group_rule_count, count, count),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (group != RuleGroup.CARRIED_OVER) FilledTonalIconButton(onClick = onAdd) {
+            Icon(Icons.Filled.Add, stringResource(R.string.group_add_rule, name))
         }
     }
 }

@@ -32,8 +32,14 @@ internal class ReorderState(
     private val scope: CoroutineScope,
     /** Which items may be dragged; the fixed cards at the end may not. */
     private val isDraggable: (LazyListItemInfo) -> Boolean,
-    /** Called as the dragged item passes another, to reflect it immediately. */
-    private val onMove: (from: Int, to: Int) -> Unit,
+    /**
+     * Called as the dragged item passes another, to reflect it immediately.
+     * Keys rather than list indices: the list has headers between groups, so an
+     * index means nothing to whoever holds the rules.
+     */
+    private val onMove: (from: Any, to: Any) -> Unit,
+    /** Whether the dragged item may be dropped on this one — the same group only. */
+    private val canDrop: (dragged: Any, target: Any) -> Boolean = { _, _ -> true },
     /** Called once on release, with the order settled. */
     private val onSettled: () -> Unit,
 ) {
@@ -65,12 +71,13 @@ internal class ReorderState(
 
         // The centre of the card as dragged, in the list's own coordinates.
         val centre = itemTop + dragOffset + itemHeight / 2f
+        val key = draggingKey ?: return
         val target = listState.layoutInfo.visibleItemsInfo
-            .filter { isDraggable(it) && it.index != from }
+            .filter { isDraggable(it) && it.index != from && canDrop(key, it.key) }
             .firstOrNull { centre.toInt() in it.offset..(it.offset + it.size) }
             ?: return
 
-        onMove(from, target.index)
+        onMove(key, target.key)
         // The list has re-laid out around the move, so the drag continues from
         // the new home rather than snapping back to where the finger started.
         draggingIndex = target.index
@@ -93,10 +100,11 @@ internal fun rememberReorderState(
     listState: LazyListState,
     scope: CoroutineScope,
     isDraggable: (LazyListItemInfo) -> Boolean,
-    onMove: (Int, Int) -> Unit,
+    onMove: (Any, Any) -> Unit,
     onSettled: () -> Unit,
+    canDrop: (Any, Any) -> Boolean = { _, _ -> true },
 ): ReorderState = remember(listState) {
-    ReorderState(listState, scope, isDraggable, onMove, onSettled)
+    ReorderState(listState, scope, isDraggable, onMove = onMove, canDrop = canDrop, onSettled = onSettled)
 }
 
 /** Put this on the handle, not the card. */

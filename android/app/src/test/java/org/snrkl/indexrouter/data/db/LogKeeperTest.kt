@@ -35,6 +35,23 @@ class LogKeeperTest {
 
         override suspend fun markRerouted(id: Long, action: String, targetPath: String) = Unit
 
+        override suspend fun markMovedAcrossVaults(
+            id: Long,
+            action: String,
+            targetPath: String,
+            audioPath: String?,
+            fromGroup: String,
+            toGroup: String,
+        ) = Unit
+
+        override suspend fun update(entry: RoutingLogEntity) {
+            rows.replaceAll { if (it.id == entry.id) entry else it }
+        }
+
+        override suspend fun moveVaultGroup(from: String, to: String) = 0
+
+        override suspend fun moveRuleGroup(from: String, to: String) = 0
+
         override suspend fun byId(id: Long): RoutingLogEntity? = rows.firstOrNull { it.id == id }
 
         override suspend fun recentTranscripts(action: String, limit: Int) =

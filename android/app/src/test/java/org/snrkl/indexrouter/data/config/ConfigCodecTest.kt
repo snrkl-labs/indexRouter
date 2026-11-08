@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.CalendarMode
 
 class ConfigCodecTest {
@@ -59,113 +58,120 @@ class ConfigCodecTest {
         More prose after it.
     """.trimIndent()
 
+    /** The per-vault layout: this vault's rules, a common copy, layout only. */
+    private val perVault = """
+        ---
+        version: "00.05.00"
+        ---
+
+        ```yaml
+        settings:
+          base-dir: "Inbox/_RingRing"
+          task-tags: ["#task"]
+        routing:
+          - keywords: ["blog idea"]
+            action: file
+            folder: "blogPostIdeas"
+            priority: 20
+        common:
+          - keywords: ["alarm"]
+            action: timer
+            priority: 10
+        ```
+    """.trimIndent()
+
     @Test
-    fun `reads the body block, defaulting what was left out`() {
+    fun `reads an older single-vault file, splitting common rules from the vault's own`() {
         val document = ConfigCodec.decode(bodyBlock)
-        assertEquals(2, document.routing.size)
+        assertEquals(1, document.routing.size)
         assertEquals(listOf("blog idea", "content idea"), document.routing[0].allKeywords())
         assertEquals("blogPostIdeas", document.routing[0].folder)
         assertEquals(listOf("blogPostIdeas"), document.routing[0].tags)
-        assertEquals("_RingRing", document.settings.baseDir)
-        // Reserved names fall back to defaults when the file omits them.
-        assertEquals("_Tasks", document.settings.taskDir)
-        // Omitted keys fall back rather than failing the whole file.
-        assertEquals(8787, document.settings.serverPort)
-        assertEquals(100, document.routing[1].priority)
-        assertTrue(document.routing[1].enabled)
+        // The timer needs no vault, so it is a common rule now.
+        assertEquals(listOf("timer"), document.common!!.map { it.allKeywords().single() })
+        // Priorities are carried exactly: evaluation order must not change.
+        assertEquals(10, document.routing[0].priority)
+        assertEquals(100, document.common!![0].priority)
+        assertEquals("_RingRing", document.layout.baseDir)
+        assertEquals("_Tasks", document.layout.taskDir)
+        // Device settings are handed back for the one-time import.
+        assertEquals(8787, document.legacySettings!!.serverPort)
     }
 
     @Test
     fun `still reads a file that keeps its config in the frontmatter`() {
-        // Installs from before 00.04.00 have this shape. Refusing it would mean
-        // re-entering every rule, which is what the last version bump avoided.
         val document = ConfigCodec.decode(legacyFrontmatter)
-        assertEquals(2, document.routing.size)
+        assertEquals(1, document.routing.size)
         assertEquals(listOf("blogidea"), document.routing[0].allKeywords())
-        assertEquals("blogPostIdeas", document.routing[0].folder)
-        assertEquals("_RingRing", document.settings.baseDir)
+        assertEquals("_RingRing", document.layout.baseDir)
+        assertEquals(1, document.common!!.size)
     }
 
     @Test
-    fun `a frontmatter config is moved into the body when written back`() {
+    fun `an older config is converted to the per-vault layout when written back`() {
         val moved = ConfigCodec.encode(ConfigCodec.decode(legacyFrontmatter))
         assertTrue(moved.contains("```yaml"))
-        // The settings are no longer between the --- fences.
+        assertTrue(moved.contains("version: \"00.05.00\""))
         val frontmatter = moved.substringAfter("---\n").substringBefore("\n---")
         assertFalse(frontmatter.contains("base-dir"))
-        assertTrue(frontmatter.contains("version:"))
-        // And it still reads as the same configuration.
-        assertEquals(ConfigCodec.decode(legacyFrontmatter), ConfigCodec.decode(moved))
+        // Device settings are no longer written to a vault file.
+        assertFalse(moved.contains("server-port"))
+        assertFalse(moved.contains("notifications:"))
+        assertFalse(moved.contains("privacy:"))
+        val reread = ConfigCodec.decode(moved)
+        assertEquals(ConfigCodec.decode(legacyFrontmatter).routing, reread.routing)
+        assertEquals(ConfigCodec.decode(legacyFrontmatter).common, reread.common)
+        assertEquals(null, reread.legacySettings)
+    }
+
+    @Test
+    fun `reads the per-vault format with a multi-segment base folder`() {
+        val document = ConfigCodec.decode(perVault)
+        assertEquals("Inbox/_RingRing", document.layout.baseDir)
+        assertEquals(1, document.routing.size)
+        assertEquals(1, document.common!!.size)
+        assertEquals("timer", document.common!![0].action)
+        assertEquals(null, document.legacySettings)
     }
 
     @Test
     fun `round-trips without losing a rule`() {
-        val original = ConfigCodec.decode(bodyBlock)
+        val original = ConfigCodec.decode(perVault)
         val reparsed = ConfigCodec.decode(ConfigCodec.encode(original))
         assertEquals(original, reparsed)
     }
 
     @Test
-    fun `notification settings survive the round trip`() {
-        // They are mirrored to the vault so a reinstall restores them; if they
-        // did not round-trip, a reinstall would quietly revert them.
-        val document = ConfigDocument(
-            settings = SettingsBlock(
-                notifications = NotifyBlock(task = true, fallback = false, debugStream = true),
-            ),
-        )
-        val reparsed = ConfigCodec.decode(ConfigCodec.encode(document))
-        assertTrue(reparsed.settings.notifications.task)
-        assertTrue(reparsed.settings.notifications.enabledFor(ActionType.TASK))
-        assertFalse(reparsed.settings.notifications.enabledFor(ActionType.FILE))
-        assertFalse(reparsed.settings.notifications.fallback)
-        assertTrue(reparsed.settings.notifications.debugStream)
+    fun `a per-vault file with no common key is silence, not an empty list`() {
+        val noCommon = perVault.substringBefore("common:").trimEnd() + "\n```\n"
+        assertEquals(null, ConfigCodec.decode(noCommon).common)
     }
 
     @Test
-    fun `the calendar mode and its target survive the round trip`() {
-        // Mirrored to the vault like every setting, so a reinstall restores it
-        // rather than quietly reverting to a different mechanism.
-        val document = ConfigDocument(
-            settings = SettingsBlock(
-                calendar = CalendarBlock(mode = "insert", sharePackage = "com.example.cal"),
-            ),
-        )
-        val reparsed = ConfigCodec.decode(ConfigCodec.encode(document))
-        assertEquals("insert", reparsed.settings.calendar.mode)
-        assertEquals("com.example.cal", reparsed.settings.calendar.sharePackage)
+    fun `a file never names a gesture or another vault`() {
+        val encoded = ConfigCodec.encode(ConfigCodec.decode(perVault))
+        assertFalse(encoded.contains("click-hold"))
+        assertFalse(encoded.contains("vault-root"))
+        assertFalse(encoded.contains("trigger"))
     }
 
     @Test
-    fun `a config written before the calendar mode existed reads with the default`() {
-        // An older installed file has no calendar block at all.
+    fun `the older file's device settings read with their defaults`() {
         val document = ConfigCodec.decode(legacyFrontmatter)
-        assertEquals(CalendarMode.DEFAULT.wireName, document.settings.calendar.mode)
-        assertEquals("org.onekash.kashcal", document.settings.calendar.sharePackage)
+        val legacy = document.legacySettings!!
+        assertEquals(CalendarMode.DEFAULT.wireName, legacy.calendar.mode)
+        assertEquals(2, legacy.privacy.logRetentionHours)
+        assertFalse(legacy.privacy.detailedContentLogging)
+        assertTrue(document.routing[0].stripKeyword)
     }
 
     @Test
-    fun `the strip switch and the privacy settings survive the round trip`() {
+    fun `the strip switch survives the round trip`() {
         val document = ConfigDocument(
-            settings = SettingsBlock(
-                privacy = PrivacyBlock(logRetentionHours = 6, detailedContentLogging = true),
-            ),
             routing = listOf(RuleBlock(keywords = listOf("note"), action = "file", stripKeyword = false)),
         )
         val reparsed = ConfigCodec.decode(ConfigCodec.encode(document))
-        assertEquals(6, reparsed.settings.privacy.logRetentionHours)
-        assertTrue(reparsed.settings.privacy.detailedContentLogging)
         assertFalse(reparsed.routing[0].stripKeyword)
-    }
-
-    @Test
-    fun `a config written before the strip switch existed defaults it on`() {
-        // On is what every example of the wanted behaviour asked for, and it is
-        // only ever applied at the start of a phrase, so it cannot eat content.
-        val document = ConfigCodec.decode(legacyFrontmatter)
-        assertTrue(document.routing[0].stripKeyword)
-        assertEquals(2, document.settings.privacy.logRetentionHours)
-        assertFalse(document.settings.privacy.detailedContentLogging)
     }
 
     @Test
@@ -186,7 +192,7 @@ class ConfigCodecTest {
         // The footer prose could grow an example block, and a pasted-in block
         // below must not quietly become the live configuration.
         val withSecondBlock = bodyBlock + "\n\n```yaml\nsettings:\n  base-dir: \"NotThisOne\"\n```\n"
-        assertEquals("_RingRing", ConfigCodec.decode(withSecondBlock).settings.baseDir)
+        assertEquals("_RingRing", ConfigCodec.decode(withSecondBlock).layout.baseDir)
     }
 
     @Test
@@ -222,7 +228,7 @@ class ConfigCodecTest {
             ```
         """.trimIndent()
         val document = ConfigCodec.decode(noFrontmatter)
-        assertEquals("Vault", document.settings.baseDir)
+        assertEquals("Vault", document.layout.baseDir)
         assertEquals(1, document.routing.size)
     }
 
@@ -259,6 +265,6 @@ class ConfigCodecTest {
             "routing:",
             "some-future-key: 42\nrouting:",
         )
-        assertEquals(2, ConfigCodec.decode(withExtra).routing.size)
+        assertEquals(1, ConfigCodec.decode(withExtra).routing.size)
     }
 }

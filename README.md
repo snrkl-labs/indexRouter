@@ -42,9 +42,14 @@ recording is never lost silently.
   content for 2 hours by default, can be cleared, and notifications leave out
   what was said unless you turn detailed logging on.
 - **A notification channel per route**, so each can have its own sound.
-- **The routing table lives in your vault** as a Markdown file you can edit by
+- **Two vaults, one per ring gesture.** Click-hold and double-click-hold can
+  each file into their own vault, with their own rules. Timer, calendar and
+  dictation rules are shared by both, and a recording is never written to the
+  other gesture's vault. If a vault cannot be reached, nothing is written and
+  the Pebble app is asked to resend.
+- **Each vault's rules live in that vault** as a Markdown file you can edit by
   hand, which also makes it the backup: reinstall, grant the folder, and the
-  rules come back.
+  rules come back. The file describes its own vault only.
 
 <img src="screenshots/routing-log.png" width="220" alt="The routing log: what was said, which rule caught it, and where it went"> <img src="screenshots/settings-privacy.png" width="220" alt="Privacy, calendar route and ring dictation settings">
 
@@ -90,14 +95,16 @@ will not update across signing keys. Uninstall the old build first.
 
 ## Setup
 
-1. **Grant vault access.** Open the app and grant the folder it writes into —
-   `_RingRing` by default — plus any folders your file rules target. On
-   GrapheneOS this is answered with Storage Scopes, and the app sees only the
-   folders you grant.
+1. **Choose a vault for each gesture.** In Settings, pick the gesture, then its
+   vault and the folder inside it the app writes into — `_RingRing` by
+   default, and it may be nested, such as `Inbox/_RingRing`. Grant that folder
+   plus any folders your file rules target. On GrapheneOS this is answered with
+   Storage Scopes, and the app sees only the folders you grant. A gesture with
+   no vault files nothing.
 2. **Generate a webhook secret** in the app. It is stored encrypted under an
    Android Keystore key, and shown so you can copy it.
 3. **In the Pebble app:** Settings → Index → Webhooks. Set the trigger to
-   click-hold, double-click-hold, or both, paste
+   click-hold, double-click-hold, or both (each has its own webhook entry), paste
    `http://127.0.0.1:8787/webhook` as the URL, and add an `Authorization`
    header with the secret as its value.
 4. **On GrapheneOS**, grant both apps the Network permission: it governs

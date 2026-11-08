@@ -80,6 +80,11 @@ data class RoutingRule(
      * "remind me about the task tomorrow" does not.
      */
     val stripKeyword: Boolean = true,
+    /**
+     * Common, or the gesture whose vault this rule writes into. A trigger never
+     * evaluates the other trigger's rules.
+     */
+    val group: RuleGroup = RuleGroup.COMMON,
 )
 
 /**

@@ -16,6 +16,11 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import org.snrkl.indexrouter.AppIdentity
 
 /**
@@ -30,11 +35,19 @@ import org.snrkl.indexrouter.AppIdentity
 class WebhookServer(
     private val port: Int,
     private val secretProvider: () -> String?,
-    private val onPayload: suspend (WebhookPayload) -> Unit,
+    /** Handles a delivery and returns the HTTP status to answer with. */
+    private val onPayload: suspend (WebhookPayload) -> Int,
     private val onRejected: (reason: String) -> Unit = {},
 ) {
 
     private var engine: ApplicationEngine? = null
+
+    /**
+     * Where deliveries are handled. Not the request's own coroutine: if the
+     * answer has to go before the work is done, the work must not be
+     * cancelled with the request.
+     */
+    private val work = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val isRunning: Boolean get() = engine != null
 
@@ -100,10 +113,18 @@ class WebhookServer(
             return
         }
 
-        // Answer the Pebble app before doing any vault work: it is waiting on this
-        // response, and a slow SAF write must not look like a delivery failure.
-        call.respondText("""{"ok":true}""", ContentType.Application.Json)
-        onPayload(payload)
+        // Routed before answering, because the answer depends on it: a 503
+        // makes Pebble resend a delivery whose vault was unreachable. Routing
+        // costs tens of milliseconds; the guard only matters if storage hangs,
+        // and then the answer is a 200 and the work finishes on its own.
+        val job = work.async { onPayload(payload) }
+        val status = withTimeoutOrNull(ANSWER_GUARD_MS) { job.await() } ?: HttpStatusCode.OK.value
+        val code = HttpStatusCode.fromValue(status)
+        call.respondText(
+            if (code.value in 200..299) """{"ok":true}""" else """{"ok":false,"status":${code.value}}""",
+            ContentType.Application.Json,
+            code,
+        )
     }
 
     private suspend fun io.ktor.util.pipeline.PipelineContext<Unit, io.ktor.server.application.ApplicationCall>.parseMultipart(): WebhookPayload {
@@ -141,6 +162,7 @@ class WebhookServer(
             recordedAtMillis = recordedAt,
             client = client,
             trigger = call.request.header(HEADER_TRIGGER),
+            deliveryId = call.request.header(HEADER_DELIVERY),
             userAgent = call.request.header("User-Agent"),
             audio = audio,
         )
@@ -157,5 +179,7 @@ class WebhookServer(
         private const val FIELD_CLIENT = "client"
         private const val FIELD_AUDIO = "audio"
         private const val HEADER_TRIGGER = "x-index-trigger"
+        private const val HEADER_DELIVERY = "x-index-delivery"
+        private const val ANSWER_GUARD_MS = 20_000L
     }
 }

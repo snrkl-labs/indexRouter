@@ -5,6 +5,8 @@ import org.snrkl.indexrouter.action.Rerouter
 import org.snrkl.indexrouter.action.RoutingPipeline
 import org.snrkl.indexrouter.data.config.ConfigRepository
 import org.snrkl.indexrouter.data.db.AppDatabase
+import org.snrkl.indexrouter.data.db.DeliveryLedger
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.data.prefs.SecretStore
 import org.snrkl.indexrouter.data.prefs.SettingsStore
 import org.snrkl.indexrouter.moc.MocGenerator
@@ -26,36 +28,57 @@ class IndexRouterApp : Application() {
      */
     class Container(app: Application) {
         val database: AppDatabase by lazy { AppDatabase.open(app) }
-        val settings: SettingsStore by lazy { SettingsStore(app) }
+
+        val settings: SettingsStore by lazy {
+            // An install from before there were two vaults: its one vault is
+            // carried over as a profile of its own, assigned to no gesture.
+            SettingsStore(app).also { it.migrateLegacyVault() }
+        }
         val secrets: SecretStore by lazy { SecretStore(app) }
         val vault: VaultRepository by lazy { VaultRepository(app) }
 
         /**
-         * Resolved on every call rather than cached: the mode and root can change
-         * while the receiver is up, and a stale store would write to the old place.
+         * The vault of one gesture, resolved on every call rather than cached:
+         * the folder can change while the receiver is up, and a stale store
+         * would write to the old place. Null when the gesture has no vault.
+         *
+         * There is deliberately no "the vault": every caller names the
+         * gesture, which is what makes writing to the wrong one impossible to
+         * do by accident.
          */
-        fun vaultStore(): VaultStore? = when (settings.storageMode) {
-            StorageMode.FILES -> settings.vaultRootPath?.let { FileVaultStore(File(it)) }
-            StorageMode.SAF -> settings.vaultTreeUri?.let { SafVaultStore(vault, it) }
+        fun vaultStore(group: RuleGroup): VaultStore? {
+            if (!group.hasVault) return null
+            val profile = settings.profile(group)
+            return when (profile.storageMode) {
+                StorageMode.FILES -> profile.vaultRootPath?.let { FileVaultStore(File(it)) }
+                StorageMode.SAF -> profile.vaultTreeUri?.let { SafVaultStore(vault, it) }
+            }
         }
 
         val config: ConfigRepository by lazy {
-            ConfigRepository(app, database.rules(), ::vaultStore, settings)
+            ConfigRepository(app, database.rules(), ::vaultStore, settings, database.log())
         }
 
         val rerouter: Rerouter by lazy {
             Rerouter(settings, ::vaultStore, database.log())
         }
 
-        val vaultAccess: VaultAccessCache by lazy { VaultAccessCache(::vaultStore) }
+        /** One access cache per gesture, so probing one vault never answers for the other. */
+        private val accessCaches: Map<RuleGroup, VaultAccessCache> by lazy {
+            RuleGroup.TRIGGERS.associateWith { group -> VaultAccessCache { vaultStore(group) } }
+        }
+
+        fun vaultAccess(group: RuleGroup): VaultAccessCache = accessCaches.getValue(group)
 
         val moc: MocGenerator by lazy {
             MocGenerator(settings, config, ::vaultStore)
         }
 
+        val ledger: DeliveryLedger by lazy { DeliveryLedger(database.deliveries()) }
+
         val pipeline: RoutingPipeline by lazy {
-            RoutingPipeline(app, config, database.log(), ::vaultStore, settings) { folder ->
-                moc.writeProFormaIfMissing(folder)
+            RoutingPipeline(app, config, database.log(), ledger, ::vaultStore, settings) { group, folder ->
+                moc.writeProFormaIfMissing(group, folder)
             }
         }
     }

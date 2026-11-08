@@ -114,6 +114,7 @@ internal fun RuleCard(
                 handle()
                 FieldLabel(stringResource(R.string.rule_label_action))
                 TypeDropdown(
+                    group = rule.group,
                     selected = rule.action,
                     onPick = { onChange(rule.copy(action = it)) },
                     modifier = Modifier.padding(end = 12.dp),
@@ -401,6 +402,8 @@ private fun FieldLabel(text: String) {
 @Composable
 private fun TypeDropdown(
     selected: ActionType,
+    /** Only the types this group may hold are offered. */
+    group: org.snrkl.indexrouter.routing.RuleGroup,
     onPick: (ActionType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -411,7 +414,7 @@ private fun TypeDropdown(
             Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            ActionType.entries.forEach { option ->
+            ActionType.entries.filter { group.allows(it) }.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option.displayName) },
                     onClick = {

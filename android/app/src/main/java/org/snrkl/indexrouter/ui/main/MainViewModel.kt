@@ -13,6 +13,7 @@ import org.snrkl.indexrouter.Timing
 import org.snrkl.indexrouter.action.ActivityLauncher
 import org.snrkl.indexrouter.data.db.LogKeeper
 import org.snrkl.indexrouter.moc.MocGenerator
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.service.RouterForegroundService
 import org.snrkl.indexrouter.ui.common.VaultFolders
 
@@ -26,14 +27,23 @@ import org.snrkl.indexrouter.ui.common.VaultFolders
 internal data class MainUiState(
     val receiverRunning: Boolean = false,
     val serverPort: Int = 0,
-    val vaultDescription: String? = null,
-    val baseDir: String = "",
-    val blockedFolders: Int = 0,
+    val vaults: List<VaultStatus> = emptyList(),
     val hasSecret: Boolean = false,
     val ruleCount: Int = 0,
+    val canLaunchFromBackground: Boolean = true,
+)
+
+/** One gesture's vault, as the status card shows it. */
+internal data class VaultStatus(
+    val group: RuleGroup,
+    val name: String,
+    val assigned: Boolean,
+    val description: String? = null,
+    val baseDir: String = "",
+    val blockedFolders: Int = 0,
     val lastSyncedAt: Long = 0L,
     val usingFallbackConfig: Boolean = false,
-    val canLaunchFromBackground: Boolean = true,
+    val commonStale: Boolean = false,
 )
 
 internal class MainViewModel(private val app: Application) : ViewModel() {
@@ -67,29 +77,37 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
             val settings = container.settings
             val running = timing.stage("serviceState") { RouterForegroundService.isRunning(app) }
             val rules = timing.stage("rules") { container.config.rules() }
-            val store = container.vaultStore()
 
             // Drawn from the last probe rather than probing now: each requirement
-            // writes and deletes a file, which measured at ~450ms and queued
-            // behind any recordings being processed. A fresh probe runs below and
-            // updates the state only if the answer moved.
-            val blocked = timing.stage("requirements") {
-                container.vaultAccess.peek(
-                    VaultFolders.core(app, settings),
-                    VaultFolders.forRules(app, settings, rules),
-                )?.count { !it.satisfied }
+            // writes and deletes a file, which measured at ~450ms. A fresh probe
+            // runs below and updates the state only if the answer moved.
+            val vaults = timing.stage("requirements") {
+                settings.vaultProfiles.map { profile ->
+                    val store = container.vaultStore(profile.group)
+                    val blocked = container.vaultAccess(profile.group).peek(
+                        VaultFolders.core(app, profile),
+                        VaultFolders.forRules(app, profile, rules),
+                    )?.count { !it.satisfied }
+                    VaultStatus(
+                        group = profile.group,
+                        name = settings.groupName(profile.group),
+                        assigned = profile.isAssigned,
+                        description = store?.takeIf { profile.isAssigned && it.isReady }?.describe(),
+                        baseDir = profile.baseDir,
+                        blockedFolders = blocked ?: 0,
+                        lastSyncedAt = profile.lastSyncedAt,
+                        usingFallbackConfig = profile.usingFallbackConfig,
+                        commonStale = profile.commonStale,
+                    )
+                }
             }
 
             _state.value = MainUiState(
                 receiverRunning = running,
                 serverPort = settings.serverPort,
-                vaultDescription = store?.takeIf { it.isReady }?.describe(),
-                baseDir = settings.baseDir,
-                blockedFolders = blocked ?: 0,
+                vaults = vaults,
                 hasSecret = container.secrets.hasSecret(),
                 ruleCount = rules.size,
-                lastSyncedAt = settings.lastSyncedAt,
-                usingFallbackConfig = settings.usingFallbackConfig,
                 canLaunchFromBackground = ActivityLauncher.canLaunchFromBackground(app),
             )
             timing.finish()
@@ -102,13 +120,36 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
         viewModelScope.launch {
             val settings = container.settings
             val rules = container.config.rules()
-            val core = VaultFolders.core(app, settings)
-            val ruleFolders = VaultFolders.forRules(app, settings, rules)
-            val before = container.vaultAccess.peek(core, ruleFolders)?.count { !it.satisfied }
-            val after = container.vaultAccess.refresh(core, ruleFolders).count { !it.satisfied }
-            if (before != after) _state.update { it.copy(blockedFolders = after) }
+            settings.vaultProfiles.filter { it.isAssigned }.forEach { profile ->
+                val core = VaultFolders.core(app, profile)
+                val ruleFolders = VaultFolders.forRules(app, profile, rules)
+                val cache = container.vaultAccess(profile.group)
+                val before = cache.peek(core, ruleFolders)?.count { !it.satisfied }
+                val after = cache.refresh(core, ruleFolders).count { !it.satisfied }
+                if (before != after) {
+                    _state.update { state ->
+                        state.copy(
+                            vaults = state.vaults.map {
+                                if (it.group == profile.group) it.copy(blockedFolders = after) else it
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
+
+    /** The user's answer when a vault's common rules differ from the app's. */
+    fun resolveCommonConflict(useVault: Boolean) {
+        viewModelScope.launch {
+            container.config.resolveCommonConflict(useVault)
+            refresh()
+        }
+    }
+
+    val commonConflict get() = container.config.commonConflict
+
+    fun groupName(group: RuleGroup): String = container.settings.groupName(group)
 
     fun toggleReceiver() {
         val settings = container.settings
@@ -135,22 +176,34 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
         }
     }
 
+    /** Rebuilds the maps in every vault that has one assigned, each in its own vault. */
     fun rebuildMoc(rebuildMaps: Boolean, refreshSamples: Boolean, retention: Int?) {
-        retention?.let { container.settings.mocBackupRetention = it }
         viewModelScope.launch {
-            val result: MocGenerator.Result =
-                container.moc.run(rebuildMaps = rebuildMaps, refreshSamples = refreshSamples)
-            _messages.value = result.failure
-                ?.let { app.getString(org.snrkl.indexrouter.R.string.moc_failed, it) }
-                ?: app.getString(
-                    org.snrkl.indexrouter.R.string.moc_ran,
-                    result.written.size,
-                    result.prunedBackups,
+            val profiles = container.settings.vaultProfiles.filter { it.isAssigned }
+            var written = 0
+            var pruned = 0
+            var failure: String? = null
+            profiles.forEach { profile ->
+                retention?.let { profile.mocBackupRetention = it }
+                val result: MocGenerator.Result = container.moc.run(
+                    group = profile.group,
+                    rebuildMaps = rebuildMaps,
+                    refreshSamples = refreshSamples,
                 )
+                written += result.written.size
+                pruned += result.prunedBackups
+                result.failure?.let { failure = "${container.settings.groupName(profile.group)}: $it" }
+            }
+            if (retention != null) profiles.forEach { container.config.writeThroughToVault(it.group) }
+            _messages.value = failure
+                ?.let { app.getString(org.snrkl.indexrouter.R.string.moc_failed, it) }
+                ?: app.getString(org.snrkl.indexrouter.R.string.moc_ran, written, pruned)
         }
     }
 
-    val mocRetention: Int get() = container.settings.mocBackupRetention
+    val mocRetention: Int
+        get() = container.settings.vaultProfiles.firstOrNull { it.isAssigned }?.mocBackupRetention
+            ?: org.snrkl.indexrouter.data.config.LayoutBlock().mocBackupRetention
 
     /**
      * Both values the Pebble app needs. The secret is generated on first read

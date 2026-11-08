@@ -1,5 +1,5 @@
 ---
-version: "00.04.00"
+version: "00.05.00"
 ---
 
 # Routing config — bundled defaults
@@ -22,17 +22,8 @@ settings:
   audio-dir: "_Audio"
   task-tags: ["#task", "#index"]
   task-created-date: true
-  server-port: 8787
   moc-backup-retention: 5
   date-filing: "day"
-  notifications:
-    file: false
-    task: false
-    timer: false
-    calendar: false
-    fallback: true
-    dictation: true
-    debug-stream: false
 routing:
   - keywords: ["task"]
     action: "task"
@@ -42,20 +33,21 @@ routing:
     priority: 10
     enabled: true
     include-in-moc: true
+common:
+  - keywords: ["dictation"]
+    action: "dictation"
+    folder: null
+    tags: []
+    match-type: "contains_word"
+    priority: 10
+    enabled: true
+    include-in-moc: false
   - keywords: ["calendar"]
     action: "calendar"
     folder: null
     tags: []
     match-type: "contains_word"
     priority: 20
-    enabled: true
-    include-in-moc: false
-  - keywords: ["dictation"]
-    action: "dictation"
-    folder: null
-    tags: []
-    match-type: "contains_word"
-    priority: 15
     enabled: true
     include-in-moc: false
   - keywords: ["alarm"]

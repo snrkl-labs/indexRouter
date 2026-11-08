@@ -16,6 +16,20 @@
     <string name="fgs_status_listening">Listening on 127.0.0.1:%1$d</string>
 
     <!-- Alerts: every one of these exists so a note never disappears quietly -->
+    <string name="alert_trigger_refused_title">Recording refused</string>
+    <string name="alert_trigger_refused_body">The webhook did not say which ring gesture sent it (%1$s), so nothing was filed. Check the gesture’s webhook entry in the Pebble app.</string>
+    <string name="alert_group_unassigned_title">No vault for %1$s</string>
+    <string name="alert_group_unassigned_body">A %1$s recording arrived, but that gesture has no vault yet, so nothing was written. Set one in Settings → Triggers. Pebble resends the recording for a few minutes, and it is filed once a vault is set.</string>
+    <string name="alert_group_unreachable_title">%1$s vault unreachable</string>
+    <string name="alert_group_unreachable_body">Could not reach the %1$s vault (%2$s). Nothing was written anywhere. Pebble resends the recording for up to ten minutes, and it is filed if the vault comes back.
+
+“%3$s”</string>
+    <string name="alert_group_gave_up_title">%1$s recording not filed</string>
+    <string name="alert_group_gave_up_body">The %1$s vault was still unreachable on Pebble’s last attempt, so the recording was not filed. Nothing was written anywhere.
+
+“%2$s”</string>
+    <string name="alert_audio_not_kept_title">Recording not kept</string>
+    <string name="alert_audio_not_kept_body">The %1$s vault could not be reached, so the recording was not saved. The %2$s route still ran.</string>
     <string name="alert_no_match_title">No rule matched</string>
     <string name="alert_no_match_body">Filed to the inbox instead: “%1$s”</string>
     <string name="alert_no_vault_title">Vault folder not available</string>
@@ -35,6 +49,27 @@
     <!-- Main screen -->
     <string name="status_receiver_running">Receiver running: http://127.0.0.1:%1$d/webhook</string>
     <string name="status_receiver_stopped">Receiver stopped — voice notes will be lost</string>
+    <string name="status_vault_unassigned">No vault set for this gesture</string>
+    <string name="status_common_stale">Common rules not yet written to this vault</string>
+    <string name="common_conflict_title">Common rules differ</string>
+    <string name="common_conflict_body">The common rules in the %1$s vault’s config file are not the same as the app’s. Which should be kept? The other copy is overwritten.</string>
+    <string name="common_conflict_use_vault">Use the vault’s</string>
+    <string name="common_conflict_keep_app">Keep the app’s</string>
+    <string name="base_folder_shared">The %1$s gesture already uses that folder in this vault. Each gesture needs its own base folder, because each keeps its own config file there.</string>
+    <string name="settings_vault_for">Vault for</string>
+    <string name="settings_vault_unassigned">No vault set. Recordings from this gesture are not filed until one is.</string>
+    <string name="action_unassign_vault">Remove vault</string>
+    <string name="group_carried_over_sub">The vault this app used before. Its rules run for neither gesture until it is given to one in Settings.</string>
+    <string name="settings_use_carried_over">Use the existing vault (%1$s) for %2$s</string>
+    <string name="first_run_assign_title">Choose a vault for each gesture</string>
+    <string name="first_run_assign_body">Each ring gesture now files into its own vault, and neither has one yet. Recordings are not filed until a gesture has a vault.</string>
+    <string name="action_open_triggers">Set up vaults</string>
+    <string name="group_common_sub">Run for either gesture, in priority order with that gesture’s own rules. Timer, calendar and dictation only.</string>
+    <string name="group_vault_sub">Writes to %1$s</string>
+    <string name="group_no_vault_sub">No vault set — choose one in Settings</string>
+    <string name="group_add_rule">Add a rule to %1$s</string>
+    <string name="group_expand">Expand group</string>
+    <string name="group_collapse">Collapse group</string>
     <string name="status_vault_granted">Vault: %1$s</string>
     <string name="status_vault_missing">Vault folder not granted</string>
     <string name="status_secret_set">Webhook secret is set</string>
@@ -385,4 +420,8 @@
     <string name="rule_strip_note">Only when it opens the phrase</string>
     <string name="info_strip_title">Remove the keyword</string>
     <string name="info_strip_body">Takes the word that fired this rule out of what gets written or handed on, so \"task call Fred\" becomes \"call Fred\".\n\nIt is only ever removed from the **start** of what was said. A keyword used mid-sentence is left alone — \"remind me about the task tomorrow\" keeps its words — so turning this on cannot eat the middle of a sentence.</string>
+    <plurals name="group_rule_count">
+        <item quantity="one">%1$d rule</item>
+        <item quantity="other">%1$d rules</item>
+    </plurals>
 </resources>

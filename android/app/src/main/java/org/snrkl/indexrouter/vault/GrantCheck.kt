@@ -43,11 +43,13 @@ object GrantCheck {
         configuredPaths: List<String>,
     ): Result {
         val name = grantedFolderName?.trim().orEmpty()
-        val firstSegments = configuredPaths
-            .mapNotNull { path -> path.split('/').firstOrNull { it.isNotBlank() } }
+        // Every segment, not just the first: a base folder may have several
+        // (`Inbox/_RingRing`), and granting the deeper one nests just the same.
+        val segments = configuredPaths
+            .flatMap { path -> path.split('/').filter { it.isNotBlank() } }
             .distinct()
 
-        return if (name.isNotBlank() && firstSegments.any { it.equals(name, ignoreCase = true) }) {
+        return if (name.isNotBlank() && segments.any { it.equals(name, ignoreCase = true) }) {
             Result.NestedInsideItself(name)
         } else {
             Result.Ok

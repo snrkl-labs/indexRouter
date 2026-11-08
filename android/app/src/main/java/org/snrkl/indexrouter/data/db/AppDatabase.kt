@@ -8,14 +8,19 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [RoutingRuleEntity::class, RoutingLogEntity::class],
-    version = 5,
+    entities = [
+        RoutingRuleEntity::class,
+        RoutingLogEntity::class,
+        DeliveryEntity::class,
+    ],
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun rules(): RoutingRuleDao
     abstract fun log(): RoutingLogDao
+    abstract fun deliveries(): DeliveryDao
 
     companion object {
 
@@ -93,9 +98,56 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Two vaults, one per ring gesture.
+         *
+         * Nothing is inferred about which gesture the install's one vault
+         * belongs to: both gestures start unassigned and the user assigns
+         * them. The vault is carried over as a profile of its own, and its file
+         * and task rules go with it to the `carried-over` group, which neither
+         * gesture evaluates until the vault is given to one. Timer, calendar
+         * and dictation rules become common.
+         *
+         * Priorities are left exactly as they were. Evaluation is by priority
+         * across the common rules and a gesture's own, so unchanged numbers
+         * mean the carried-over vault, once assigned, routes exactly as before.
+         *
+         * Existing log rows all point into that vault, whichever gesture sent
+         * them, so that is the vault they are recorded against.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE routing_rules ADD COLUMN groupId TEXT NOT NULL DEFAULT 'common'")
+                db.execSQL("ALTER TABLE routing_log ADD COLUMN ruleGroup TEXT")
+                db.execSQL("ALTER TABLE routing_log ADD COLUMN vaultGroup TEXT")
+                db.execSQL("ALTER TABLE routing_log ADD COLUMN deliveryId TEXT")
+                db.execSQL("ALTER TABLE routing_log ADD COLUMN reroutedFromGroup TEXT")
+                db.execSQL("ALTER TABLE routing_log ADD COLUMN reroutedToGroup TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_routing_log_deliveryId ON routing_log (deliveryId)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS deliveries (" +
+                        "deliveryId TEXT NOT NULL PRIMARY KEY, " +
+                        "firstSeenAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, " +
+                        "state TEXT NOT NULL, " +
+                        "attempts INTEGER NOT NULL, " +
+                        "logRowId INTEGER, " +
+                        "notified INTEGER NOT NULL)",
+                )
+                db.execSQL("UPDATE routing_rules SET groupId = 'carried-over' WHERE action IN ('file', 'task')")
+                db.execSQL("UPDATE routing_rules SET groupId = 'common' WHERE action NOT IN ('file', 'task')")
+                db.execSQL("UPDATE routing_log SET vaultGroup = 'carried-over' WHERE isMarker = 0")
+                db.execSQL(
+                    "UPDATE routing_log SET ruleGroup = CASE " +
+                        "WHEN action IN ('timer', 'calendar', 'dictation') THEN 'common' " +
+                        "ELSE 'carried-over' END WHERE isMarker = 0",
+                )
+            }
+        }
+
         fun open(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "indexrouter.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

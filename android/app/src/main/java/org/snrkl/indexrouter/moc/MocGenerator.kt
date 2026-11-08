@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import org.snrkl.indexrouter.data.config.ConfigRepository
 import org.snrkl.indexrouter.data.prefs.SettingsStore
 import org.snrkl.indexrouter.routing.ActionType
+import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.data.prefs.VaultProfile
 import org.snrkl.indexrouter.vault.VaultStore
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -19,7 +21,7 @@ import java.time.format.DateTimeFormatter
 class MocGenerator(
     private val settings: SettingsStore,
     private val config: ConfigRepository,
-    private val vaultStore: () -> VaultStore?,
+    private val vaultStore: (RuleGroup) -> VaultStore?,
 ) {
 
     data class Result(
@@ -29,24 +31,26 @@ class MocGenerator(
     )
 
     suspend fun run(
+        group: RuleGroup,
         rebuildMaps: Boolean,
         refreshSamples: Boolean,
         now: LocalDateTime = LocalDateTime.now(),
     ): Result = withContext(Dispatchers.IO) {
         var result = Result()
-        if (rebuildMaps) result = rebuild(now)
+        if (rebuildMaps) result = rebuild(group, now)
         if (refreshSamples) {
-            val samples = includedFolders().mapNotNull { (name, _) -> writeProForma(name).written.firstOrNull() }
+            val samples = includedFolders(group).mapNotNull { (name, _) -> writeProForma(group, name).written.firstOrNull() }
             result = result.copy(written = result.written + samples)
         }
         result
     }
 
-    suspend fun rebuild(now: LocalDateTime = LocalDateTime.now()): Result = withContext(Dispatchers.IO) {
-        val store = vaultStore() ?: return@withContext Result(failure = "no vault access")
+    suspend fun rebuild(group: RuleGroup, now: LocalDateTime = LocalDateTime.now()): Result = withContext(Dispatchers.IO) {
+        val settings = settings.profile(group)
+        val store = vaultStore(group) ?: return@withContext Result(failure = "no vault access")
         val stamp = DateTimeFormatter.ofPattern(MocContent.BACKUP_STAMP_PATTERN).format(now)
 
-        val folders = includedFolders()
+        val folders = includedFolders(group)
         val written = mutableListOf<String>()
         var pruned = 0
         val children = mutableListOf<Pair<String, String>>()
@@ -56,7 +60,7 @@ class MocGenerator(
             val body = MocContent.childBody(
                 folderName = name,
                 folderPath = path,
-                rootMocName = MocContent.mocFileName(baseName()),
+                rootMocName = MocContent.mocFileName(baseName(settings)),
                 icon = MocContent.iconFor(
                     folderName = name,
                     taskDir = settings.taskDirName,
@@ -64,7 +68,7 @@ class MocGenerator(
                     audioDir = settings.audioDirName,
                 ),
             )
-            pruned += writeWithBackup(store, path, fileName, body, stamp)
+            pruned += writeWithBackup(store, path, fileName, body, stamp, settings.mocBackupRetention)
             written += "$path/$fileName"
             // Counted for the root index; a folder listing is cheap and it tells
             // the user at a glance which routes are actually being used.
@@ -74,9 +78,9 @@ class MocGenerator(
             children += name to "$items item${if (items == 1) "" else "s"}"
         }
 
-        val rootName = MocContent.mocFileName(baseName())
-        val rootBody = MocContent.rootBody(baseName(), settings.baseDir, children)
-        pruned += writeWithBackup(store, settings.baseDir, rootName, rootBody, stamp)
+        val rootName = MocContent.mocFileName(baseName(settings))
+        val rootBody = MocContent.rootBody(baseName(settings), settings.baseDir, children)
+        pruned += writeWithBackup(store, settings.baseDir, rootName, rootBody, stamp, settings.mocBackupRetention)
         written += "${settings.baseDir}/$rootName"
 
         Result(written = written, prunedBackups = pruned)
@@ -90,16 +94,17 @@ class MocGenerator(
      * the one moment nobody thinks to go looking for a button. Existing samples
      * are left alone here; refreshing them is the rebuild's job.
      */
-    suspend fun writeProFormaIfMissing(folderName: String): Result = withContext(Dispatchers.IO) {
-        val store = vaultStore() ?: return@withContext Result(failure = "no vault access")
-        val path = settings.rulePath(folderName)
+    suspend fun writeProFormaIfMissing(group: RuleGroup, folderName: String): Result = withContext(Dispatchers.IO) {
+        val store = vaultStore(group) ?: return@withContext Result(failure = "no vault access")
+        val path = settings.profile(group).rulePath(folderName)
         if (store.readText("$path/$folderName queries.md") != null) return@withContext Result()
-        writeProForma(folderName)
+        writeProForma(group, folderName)
     }
 
     /** Drops a ready-to-paste query block beside a folder's content. */
-    suspend fun writeProForma(folderName: String): Result = withContext(Dispatchers.IO) {
-        val store = vaultStore() ?: return@withContext Result(failure = "no vault access")
+    suspend fun writeProForma(group: RuleGroup, folderName: String): Result = withContext(Dispatchers.IO) {
+        val settings = settings.profile(group)
+        val store = vaultStore(group) ?: return@withContext Result(failure = "no vault access")
         val path = settings.rulePath(folderName)
         val fileName = "$folderName queries.md"
         return@withContext try {
@@ -119,9 +124,10 @@ class MocGenerator(
     }
 
     /** Folders that appear in the map: reserved ones, plus rules that opt in. */
-    suspend fun includedFolders(): List<Pair<String, String>> {
+    suspend fun includedFolders(group: RuleGroup): List<Pair<String, String>> {
+        val settings = settings.profile(group)
         val fromRules = config.rules()
-            .filter { it.action == ActionType.FILE && it.includeInMoc }
+            .filter { it.group == group && it.action == ActionType.FILE && it.includeInMoc }
             .mapNotNull { rule -> rule.folder?.takeIf { it.isNotBlank() } }
             .distinct()
             .map { it to settings.rulePath(it) }
@@ -135,7 +141,7 @@ class MocGenerator(
         return (reserved + fromRules).distinctBy { it.second }
     }
 
-    private fun baseName(): String =
+    private fun baseName(settings: VaultProfile): String =
         settings.baseDir.trim('/').substringAfterLast('/').ifBlank { "Vault" }
 
     /** Returns how many old backups were pruned. */
@@ -145,6 +151,7 @@ class MocGenerator(
         fileName: String,
         body: String,
         stamp: String,
+        keep: Int,
     ): Int {
         val target = "$folderPath/$fileName"
         val existing = store.readText(target)
@@ -156,7 +163,7 @@ class MocGenerator(
             MocContent.backupsToPrune(
                 existing = store.listFiles(backupFolder),
                 mocFileName = fileName,
-                keep = settings.mocBackupRetention,
+                keep = keep,
             ).forEach { stale ->
                 if (store.delete("$backupFolder/$stale")) pruned++
             }

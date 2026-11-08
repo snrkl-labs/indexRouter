@@ -17,6 +17,11 @@ data class WebhookPayload(
     /** `user-agent`, e.g. "CoreApp/1.8.0.6-1-g4546d7b2f" — version sanity-checking. */
     val userAgent: String?,
     val audio: AudioClip?,
+    /**
+     * `x-index-delivery`: stable per recording, the same on every resend. Used
+     * to recognise a delivery already filed.
+     */
+    val deliveryId: String? = null,
 ) {
     data class AudioClip(
         /** Original name, e.g. ring_EA22…-…m4a. */

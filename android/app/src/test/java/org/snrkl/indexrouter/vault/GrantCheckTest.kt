@@ -50,4 +50,10 @@ class GrantCheckTest {
         // Paths that do not start with the prefix are left alone.
         assertEquals("Blog Ideas", GrantCheck.stripPrefix("Blog Ideas", "_RingRing"))
     }
+
+    @Test
+    fun `a grant of a deeper segment of a multi-segment base folder is caught`() {
+        val result = GrantCheck.diagnose("_RingRing", listOf("Inbox/_RingRing"))
+        assertEquals(GrantCheck.Result.NestedInsideItself("_RingRing"), result)
+    }
 }
