@@ -81,6 +81,7 @@ class RoutingPipeline(
                 payload.audio?.bytes?.size ?: 0,
                 quotable(payload.transcript),
             ),
+            gesture = gestureOf(payload),
         )
 
         val group = when (val trigger = TriggerHeader.parse(payload.trigger)) {
@@ -99,6 +100,7 @@ class RoutingPipeline(
                     context,
                     context.getString(R.string.alert_trigger_refused_title),
                     context.getString(R.string.alert_trigger_refused_body, shown),
+                    gesture = gestureOf(payload),
                 )
                 insertRow(payload, receivedAt, STATUS_REJECTED, error = "no usable X-Index-Trigger ($shown)")
                 return@withContext HTTP_BAD_REQUEST
@@ -107,7 +109,7 @@ class RoutingPipeline(
 
         val attempt = when (val decision = ledger.begin(payload.deliveryId)) {
             DeliveryLedger.Decision.AlreadyDone -> {
-                debug.event(context.getString(R.string.debug_stage_logged), "repeat delivery — already filed")
+                debug.event(context.getString(R.string.debug_stage_logged), "repeat delivery — already filed", gesture = gestureOf(payload))
                 return@withContext HTTP_OK
             }
             // The same id is being handled by another request this moment.
@@ -158,6 +160,7 @@ class RoutingPipeline(
             } else {
                 context.getString(R.string.debug_classified_no_match)
             },
+            gesture = gestureOf(payload),
         )
 
         val action = decision.rule?.action
@@ -216,11 +219,13 @@ class RoutingPipeline(
                     settings.groupName(group),
                     action?.displayName.orEmpty(),
                 ),
+                gesture = gestureOf(payload),
             )
         }
         debug.event(
             context.getString(R.string.debug_stage_audio),
             audioPath ?: context.getString(R.string.debug_audio_none),
+            gesture = gestureOf(payload),
         )
 
         var result = try {
@@ -255,6 +260,7 @@ class RoutingPipeline(
                     context,
                     context.getString(R.string.alert_route_failed_title),
                     context.getString(R.string.alert_route_failed_body, quotable(payload.transcript), t.message.orEmpty()),
+                    gesture = gestureOf(payload),
                 )
             }
             notified = true
@@ -270,8 +276,9 @@ class RoutingPipeline(
                 R.string.debug_dispatched_detail,
                 action?.displayName ?: context.getString(R.string.route_default_name),
                 result.status,
-                result.targetPath ?: result.error ?: "—",
+                result.targetPath?.let(::quotablePath) ?: result.error ?: "—",
             ),
+            gesture = gestureOf(payload),
         )
 
         announceRoute(payload, decision, result)
@@ -306,17 +313,20 @@ class RoutingPipeline(
                 context,
                 context.getString(R.string.alert_group_gave_up_title, name),
                 context.getString(R.string.alert_group_gave_up_body, name, quotable(payload.transcript)),
+                gesture = gestureOf(payload),
             )
             alreadyNotified -> return false
             folder == UNASSIGNED -> Notifications.alert(
                 context,
                 context.getString(R.string.alert_group_unassigned_title, name),
                 context.getString(R.string.alert_group_unassigned_body, name),
+                gesture = gestureOf(payload),
             )
             else -> Notifications.alert(
                 context,
                 context.getString(R.string.alert_group_unreachable_title, name),
                 context.getString(R.string.alert_group_unreachable_body, name, folder, quotable(payload.transcript)),
+                gesture = gestureOf(payload),
             )
         }
         return true
@@ -381,6 +391,7 @@ class RoutingPipeline(
         debug.event(
             context.getString(R.string.debug_stage_logged),
             context.getString(R.string.debug_logged_detail, result.status, durationMs),
+            gesture = gestureOf(payload),
         )
         return if (retry) HTTP_UNAVAILABLE else HTTP_OK
     }
@@ -428,6 +439,7 @@ class RoutingPipeline(
                 Notifications.CHANNEL_FALLBACK,
                 context.getString(R.string.alert_no_match_title),
                 context.getString(R.string.alert_no_match_body, transcript),
+                gesture = gestureOf(payload),
             )
             return
         }
@@ -440,8 +452,9 @@ class RoutingPipeline(
             context.getString(
                 R.string.route_notify_body,
                 transcript,
-                result.targetPath ?: context.getString(R.string.route_notify_no_file),
+                result.targetPath?.let(::quotablePath) ?: context.getString(R.string.route_notify_no_file),
             ),
+            gesture = gestureOf(payload),
         )
     }
 
@@ -562,6 +575,7 @@ class RoutingPipeline(
                     context,
                     context.getString(R.string.alert_timer_no_length_title),
                     context.getString(R.string.alert_timer_no_length_body, quotable(payload.transcript)),
+                    gesture = gestureOf(payload),
                 )
                 return Outcome(STATUS_FAILED, error = "no duration found in transcript")
             }
@@ -588,6 +602,7 @@ class RoutingPipeline(
             channelId = Notifications.actionChannel(ActionType.TIMER),
             notificationTitle = context.getString(R.string.alert_timer_tap_title, DurationParser.describe(seconds)),
             notificationBody = context.getString(R.string.alert_timer_tap_body, label),
+            gesture = gestureOf(payload),
         )
         return when (outcome) {
             // "Opened the timer app" — not "a timer is running". Firing an
@@ -633,6 +648,7 @@ class RoutingPipeline(
             channelId = Notifications.actionChannel(ActionType.CALENDAR),
             notificationTitle = context.getString(R.string.alert_calendar_tap_title),
             notificationBody = quotable(payload.transcript),
+            gesture = gestureOf(payload),
         )
         return when (outcome) {
             ActivityLauncher.Outcome.FAILED ->
@@ -680,6 +696,7 @@ class RoutingPipeline(
             channelId = Notifications.actionChannel(ActionType.CALENDAR),
             notificationTitle = context.getString(R.string.alert_calendar_tap_title),
             notificationBody = quotable(payload.transcript),
+            gesture = gestureOf(payload),
         )
         return when (outcome) {
             // Not a failure of this mode — the recording is still routable by
@@ -754,6 +771,24 @@ class RoutingPipeline(
         } else {
             context.getString(R.string.content_withheld)
         }
+
+    /**
+     * The name of the gesture a delivery came from, for a notification's
+     * header. Null for a delivery with no usable trigger.
+     */
+    private fun gestureOf(payload: WebhookPayload): String? =
+        (TriggerHeader.parse(payload.trigger) as? TriggerHeader.Gesture)?.let { settings.groupName(it.group) }
+
+    /**
+     * Where a note went, as a notification may show it. The file name is made
+     * from the opening words of what was said, so unless detailed content
+     * logging is on, only the folder is shown.
+     */
+    private fun quotablePath(path: String): String = when {
+        settings.detailedContentLogging -> path
+        '/' in path -> context.getString(R.string.content_withheld_path, path.substringBeforeLast('/'))
+        else -> context.getString(R.string.content_withheld_file)
+    }
 
     private fun stripKeyword(transcript: String, decision: RoutingDecision): String =
         if (decision.rule?.stripKeyword == false) {

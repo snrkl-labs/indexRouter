@@ -167,11 +167,18 @@ object Notifications {
             .setContentIntent(openApp(context))
             .build()
 
-    fun alert(context: Context, title: String, body: String) {
+    /**
+     * @param gesture the gesture the recording came from, shown in the header
+     *   beside the app name, so two gestures' notifications can be told apart.
+     *   Its name, never its vault's: a vault name can be long and says where
+     *   things are kept.
+     */
+    fun alert(context: Context, title: String, body: String, gesture: String? = null) {
         post(
             context,
             id = alertIds.take(),
             notification = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+                .setSubText(gesture)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -189,11 +196,12 @@ object Notifications {
      * what happened to this recording, which is what someone tapping a routing
      * notification is asking to see.
      */
-    fun route(context: Context, channelId: String, title: String, body: String) {
+    fun route(context: Context, channelId: String, title: String, body: String, gesture: String? = null) {
         post(
             context,
             id = routeIds.take(),
             notification = NotificationCompat.Builder(context, channelId)
+                .setSubText(gesture)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -212,12 +220,13 @@ object Notifications {
      * summary is re-posted with each event, which is what keeps the group
      * intact as it grows.
      */
-    fun debug(context: Context, stage: String, detail: String) {
+    fun debug(context: Context, stage: String, detail: String, gesture: String? = null) {
         val id = debugIds.take()
         post(
             context,
             id = id,
             notification = NotificationCompat.Builder(context, CHANNEL_DEBUG)
+                .setSubText(gesture)
                 .setContentTitle(stage)
                 .setContentText(detail)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(detail))

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.20.1 — 2026-11-09
+
+### Changed
+- **Notifications name the gesture.** Each one shows the gesture the
+  recording came from beside the app name, so notifications from the two
+  gestures can be told apart. The gesture's name is shown, never its vault's.
+- **Notifications no longer show a note's file name** unless detailed content
+  logging is on, because the name is made from the opening words of what was
+  said. They show the folder the note went to.
+- **The routing log hides a dictation's text** unless detailed content
+  logging is on. The text is still kept there for the keyboard to collect.
+
 ## v0.20.0 — 2026-11-09
 
 ### Added

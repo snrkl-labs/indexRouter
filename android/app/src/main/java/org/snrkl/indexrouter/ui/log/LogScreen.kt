@@ -85,6 +85,13 @@ internal class LogViewModel(private val app: Application) : ViewModel() {
         )
     }
 
+    /**
+     * Whether a dictation's words may be shown. The log is where the keyboard
+     * collects a dictation from, so the text is stored either way; it is only
+     * kept off the screen unless detailed content logging is on.
+     */
+    fun showsDictationText(): Boolean = container.settings.detailedContentLogging
+
     fun messageShown() {
         _messages.value = null
     }
@@ -137,6 +144,7 @@ internal class LogViewModel(private val app: Application) : ViewModel() {
 internal fun LogScreen(viewModel: LogViewModel, onBack: () -> Unit) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
     val labels = remember(entries) { viewModel.groupLabels() }
+    val showDictation = remember(entries) { viewModel.showsDictationText() }
     val groupColors = rememberGroupColors(labels.seeds)
     val message by viewModel.messages.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -190,7 +198,7 @@ internal fun LogScreen(viewModel: LogViewModel, onBack: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 items(entries, key = { it.id }) { entry ->
-                    LogRow(entry, labels, groupColors) {
+                    LogRow(entry, labels, groupColors, showDictation) {
                         // Re-route is the user overruling the classifier, and only
                         // where there is a file to move.
                         when {
@@ -247,6 +255,7 @@ private fun LogRow(
     entry: RoutingLogEntity,
     labels: GroupLabels,
     colors: Map<RuleGroup, GroupColor>,
+    showDictation: Boolean,
     onClick: () -> Unit,
 ) {
     // A marker is not a routed item: it is the record that the rest went.
@@ -288,7 +297,11 @@ private fun LogRow(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = entry.transcript.ifBlank { stringResource(R.string.log_no_transcript) },
+            text = when {
+                entry.action == ActionType.DICTATION.wireName && !showDictation ->
+                    stringResource(R.string.log_dictation_withheld)
+                else -> entry.transcript.ifBlank { stringResource(R.string.log_no_transcript) }
+            },
             style = MaterialTheme.typography.bodyLarge,
         )
         // Which gesture sent it, in that gesture's colour, and which vault it

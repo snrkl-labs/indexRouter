@@ -30,11 +30,11 @@ class DebugStream(
 
     val enabled: Boolean get() = settings.debugStream
 
-    fun event(stage: String, detail: String) {
+    fun event(stage: String, detail: String, gesture: String? = null) {
         Log.i(AppIdentity.LOG_TAG, "debug stage=$stage $detail")
         if (!enabled) return
         // Never let the diagnostic tool be the thing that breaks the pipeline
         // it is diagnosing.
-        runCatching { Notifications.debug(context, stage, detail) }
+        runCatching { Notifications.debug(context, stage, detail, gesture) }
     }
 }

@@ -46,6 +46,7 @@ object ActivityLauncher {
         channelId: String,
         notificationTitle: String,
         notificationBody: String,
+        gesture: String? = null,
     ): Outcome {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
@@ -60,10 +61,10 @@ object ActivityLauncher {
                 Outcome.LAUNCHED
             }.getOrElse {
                 Log.w(AppIdentity.LOG_TAG, "Direct launch refused, falling back to notification", it)
-                notify(context, intent, channelId, notificationTitle, notificationBody)
+                notify(context, intent, channelId, notificationTitle, notificationBody, gesture)
             }
         }
-        return notify(context, intent, channelId, notificationTitle, notificationBody)
+        return notify(context, intent, channelId, notificationTitle, notificationBody, gesture)
     }
 
     private fun notify(
@@ -72,6 +73,7 @@ object ActivityLauncher {
         channelId: String,
         title: String,
         body: String,
+        gesture: String?,
     ): Outcome {
         val code = Notifications.launcherIds.take()
         val pending = PendingIntent.getActivity(
@@ -81,6 +83,7 @@ object ActivityLauncher {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, channelId)
+            .setSubText(gesture)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

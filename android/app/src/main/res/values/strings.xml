@@ -444,6 +444,9 @@
     <string name="settings_calendar_installed">✓ Installed — the phrase goes straight there, with no chooser.</string>
     <string name="settings_calendar_missing">✗ Not installed — the route falls back to a plain new event.</string>
     <!-- Privacy -->
+    <string name="content_withheld_path">%1$s/ (file name hidden — it is made from the opening words)</string>
+    <string name="content_withheld_file">(file name hidden — it is made from the opening words)</string>
+    <string name="log_dictation_withheld">(dictation — text hidden; turn on detailed content logging to see it here)</string>
     <string name="content_withheld">(content hidden — turn on detailed content logging to see it here)</string>
     <string name="settings_group_privacy">Privacy</string>
     <string name="settings_privacy_body">What was said is kept in the routing log so a recording can be traced, and the log is the only place a dictation\'s words exist at all. These decide how long that lasts and whether notifications repeat it.</string>
