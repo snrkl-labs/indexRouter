@@ -79,6 +79,18 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
     /** The selected gesture's vault. Every vault setting on this screen means this one. */
     private val vault get() = settings.profile(_group.value)
 
+    /** A group's display name. Blank restores the default. */
+    fun setGroupName(group: RuleGroup, name: String) {
+        settings.setGroupName(group, name)
+        refresh(_state.value.hasAllFilesAccess, probeFolders = false)
+    }
+
+    /** A group's colour seed. Null restores the default. */
+    fun setGroupSeed(group: RuleGroup, seed: Int?) {
+        settings.setGroupSeed(group, seed)
+        refresh(_state.value.hasAllFilesAccess, probeFolders = false)
+    }
+
     fun selectGroup(group: RuleGroup) {
         if (!group.isTrigger) return
         _group.value = group

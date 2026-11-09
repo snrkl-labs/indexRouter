@@ -95,7 +95,7 @@ will not update across signing keys. Uninstall the old build first.
 
 ## Setup
 
-1. **Choose a vault for each gesture.** In Settings, pick the gesture, then its
+1. **Choose a vault for each gesture.** In Triggers, pick the gesture, then its
    vault and the folder inside it the app writes into — `_RingRing` by
    default, and it may be nested, such as `Inbox/_RingRing`. Grant that folder
    plus any folders your file rules target. On GrapheneOS this is answered with

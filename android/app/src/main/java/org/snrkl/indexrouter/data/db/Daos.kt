@@ -50,6 +50,10 @@ interface RoutingRuleDao {
 @Dao
 interface RoutingLogDao {
 
+    /** When a gesture last delivered anything, as the Pebble setup steps show it. Null if never (or pruned). */
+    @Query("SELECT MAX(receivedAt) FROM routing_log WHERE `trigger` = :trigger AND isMarker = 0")
+    suspend fun lastReceivedFor(trigger: String): Long?
+
     @Query("SELECT * FROM routing_log ORDER BY receivedAt DESC LIMIT :limit")
     fun observeRecent(limit: Int = 200): Flow<List<RoutingLogEntity>>
 

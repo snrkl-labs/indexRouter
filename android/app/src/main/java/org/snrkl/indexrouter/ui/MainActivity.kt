@@ -40,6 +40,9 @@ import org.snrkl.indexrouter.ui.rules.RulesScreen
 import org.snrkl.indexrouter.ui.rules.RulesViewModel
 import org.snrkl.indexrouter.ui.settings.SettingsScreen
 import org.snrkl.indexrouter.ui.settings.SettingsViewModel
+import org.snrkl.indexrouter.ui.triggers.TriggersScreen
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import org.snrkl.indexrouter.ui.theme.IndexRouterTheme
 import org.snrkl.indexrouter.vault.VaultPathResolver
 import org.snrkl.indexrouter.routing.RuleGroup
@@ -233,6 +236,7 @@ class MainActivity : ComponentActivity() {
                     onOpenRules = { navController.navigate(Destinations.RULES) },
                     onOpenLog = { navController.navigate(Destinations.LOG) },
                     onOpenSettings = { navController.navigate(Destinations.SETTINGS) },
+                    onOpenTriggers = { navController.navigate(Destinations.triggers()) },
                     onFixBackgroundLaunch = {
                         startActivity(ActivityLauncher.overlaySettingsIntent(this@MainActivity))
                     },
@@ -268,6 +272,31 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
+                    onOpenTriggers = { group -> navController.navigate(Destinations.triggers(group)) },
+                    onOpenNotificationChannels = ::openNotificationChannels,
+                    onOpenInputMethodSettings = ::openInputMethodSettings,
+                    hasAllFilesAccess = ::hasAllFilesAccess,
+                )
+            }
+
+            composable(
+                Destinations.TRIGGERS,
+                arguments = listOf(
+                    navArgument("group") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                val vm: SettingsViewModel =
+                    viewModel(factory = viewModelFactory { SettingsViewModel(application) })
+                val initial = entry.arguments?.getString("group")
+                    ?.let { wire -> RuleGroup.entries.firstOrNull { it.wireName == wire } }
+                TriggersScreen(
+                    viewModel = vm,
+                    initialGroup = initial,
+                    onBack = { navController.popBackStack() },
                     onChooseVault = {
                         pickingGroup = vm.state.value.group
                         val vaultStart = vaultPickerStart(pickingGroup)
@@ -289,8 +318,6 @@ class MainActivity : ComponentActivity() {
                         pickBaseFolder.launch(startAt(pickingGroup, insideBase = false))
                     },
                     onOpenFileAccess = { fileAccessRequested = true },
-                    onOpenNotificationChannels = ::openNotificationChannels,
-                    onOpenInputMethodSettings = ::openInputMethodSettings,
                     hasAllFilesAccess = ::hasAllFilesAccess,
                 )
             }

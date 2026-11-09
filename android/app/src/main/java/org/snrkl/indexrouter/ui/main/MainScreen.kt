@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,6 +67,7 @@ internal fun MainScreen(
     onOpenRules: () -> Unit,
     onOpenLog: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTriggers: () -> Unit,
     onFixBackgroundLaunch: () -> Unit,
     onCopy: (String, String) -> Unit,
 ) {
@@ -120,7 +122,7 @@ internal fun MainScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
-                        Button(onClick = onOpenSettings) { Text(stringResource(R.string.action_open_triggers)) }
+                        Button(onClick = onOpenTriggers) { Text(stringResource(R.string.action_open_triggers)) }
                     }
                 }
             }
@@ -160,6 +162,9 @@ internal fun MainScreen(
             Button(onClick = { showMoc = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.action_rebuild_moc))
             }
+            OutlinedButton(onClick = onOpenTriggers, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.action_triggers))
+            }
             OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.action_settings))
             }
@@ -191,6 +196,8 @@ internal fun MainScreen(
         PebbleSetupDialog(
             url = url,
             secret = secret,
+            gestures = state.vaults,
+            groupColors = groupColors,
             onCopy = onCopy,
             onRegenerate = {
                 showSetup = false
@@ -400,6 +407,8 @@ private fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Uni
 private fun PebbleSetupDialog(
     url: String,
     secret: String,
+    gestures: List<VaultStatus>,
+    groupColors: Map<RuleGroup, GroupColor>,
     onCopy: (String, String) -> Unit,
     onRegenerate: () -> Unit,
     onDismiss: () -> Unit,
@@ -421,6 +430,9 @@ private fun PebbleSetupDialog(
                 CopyableValue(stringResource(R.string.setup_secret_label), secret) {
                     onCopy(secret, "secret")
                 }
+                // One block per gesture, in its colour: each needs its own
+                // webhook entry, and the second is the one that gets forgotten.
+                gestures.forEach { gesture -> GestureSteps(gesture, groupColors[gesture.group]) }
             }
         },
         confirmButton = {
@@ -452,6 +464,70 @@ private fun PebbleSetupDialog(
         )
     }
 }
+
+/** What the Pebble app needs for one gesture, and whether it has been heard from. */
+@Composable
+private fun GestureSteps(gesture: VaultStatus, color: GroupColor?) {
+    val onContainer = color?.onContainer ?: MaterialTheme.colorScheme.onSecondaryContainer
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color?.container ?: MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)),
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(start = 6.dp, top = 12.dp)
+                .size(width = 5.dp, height = 40.dp)
+                .background(color?.accent ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)),
+        )
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.setup_gesture_title, gesture.name, gestureLabel(gesture.group)),
+                style = MaterialTheme.typography.titleSmall,
+                color = onContainer,
+            )
+            Text(
+                stringResource(R.string.setup_gesture_step_button, gestureLabel(gesture.group)),
+                style = MaterialTheme.typography.bodySmall,
+                color = onContainer,
+            )
+            Text(
+                stringResource(R.string.setup_gesture_step_webhook, gesture.group.wireName),
+                style = MaterialTheme.typography.bodySmall,
+                color = onContainer,
+            )
+            val heard = gesture.lastHeardAt
+            Text(
+                text = if (heard == null) {
+                    stringResource(R.string.setup_gesture_never_heard)
+                } else {
+                    stringResource(
+                        R.string.setup_gesture_last_heard,
+                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(heard)),
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = onContainer,
+            )
+            if (!gesture.assigned) {
+                Text(
+                    stringResource(R.string.setup_gesture_no_vault),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun gestureLabel(group: RuleGroup): String = stringResource(
+    if (group == RuleGroup.DOUBLE_CLICK_HOLD) R.string.setup_gesture_double else R.string.setup_gesture_single,
+)
 
 @Composable
 private fun CopyableValue(label: String, value: String, onCopy: () -> Unit) {

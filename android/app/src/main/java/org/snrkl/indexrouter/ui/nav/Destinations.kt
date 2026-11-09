@@ -12,6 +12,11 @@ internal object Destinations {
     const val LOG = "log"
     const val SETTINGS = "settings"
 
+    /** Optionally opened on one gesture: `triggers?group=<wire name>`. */
+    const val TRIGGERS = "triggers?group={group}"
+    fun triggers(group: org.snrkl.indexrouter.routing.RuleGroup? = null) =
+        if (group == null) "triggers" else "triggers?group=${group.wireName}"
+
     /**
      * A notification tapped from the shade names the screen it should open.
      * Route notifications open the log, which is the record of what happened to

@@ -99,6 +99,15 @@ internal fun RulesScreen(
     val snackbar = remember { SnackbarHostState() }
 
     var expandedId by remember { mutableStateOf<Long?>(null) }
+    var showRunOrder by remember { mutableStateOf(false) }
+    if (showRunOrder) {
+        RunOrderDialog(
+            rules = rules,
+            names = RuleGroup.entries.associateWith { headers[it]?.name ?: it.defaultName },
+            colors = groupColors,
+            onDismiss = { showRunOrder = false },
+        )
+    }
     var moreFor by remember { mutableStateOf<RoutingRule?>(null) }
 
     val listState = rememberLazyListState()
@@ -133,6 +142,11 @@ internal fun RulesScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, stringResource(R.string.action_back))
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { showRunOrder = true }) {
+                        Text(stringResource(R.string.action_run_order))
                     }
                 },
             )

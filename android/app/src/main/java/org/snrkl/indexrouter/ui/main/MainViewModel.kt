@@ -48,6 +48,8 @@ internal data class VaultStatus(
     val usingFallbackConfig: Boolean = false,
     val commonStale: Boolean = false,
     val syncError: String? = null,
+    /** When this gesture last delivered a recording; null if never, as far as the log remembers. */
+    val lastHeardAt: Long? = null,
 ) {
     /** Something about this vault's config file wants the user's attention. */
     val needsSync: Boolean get() = assigned && (lastSyncedAt == 0L || commonStale || syncError != null)
@@ -106,6 +108,9 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
                         usingFallbackConfig = profile.usingFallbackConfig,
                         commonStale = profile.commonStale,
                         syncError = profile.lastSyncError,
+                        lastHeardAt = runCatching {
+                            container.database.log().lastReceivedFor(profile.group.wireName)
+                        }.getOrNull(),
                     )
                 }
             }

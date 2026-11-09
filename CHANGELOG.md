@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.20.0 — 2026-11-09
+
+### Added
+- **Triggers.** A screen for the gestures themselves: each one's name and
+  colour, and its vault, base folder and file access, which move here from
+  Settings. A colour is picked from swatches or typed as a hex value, with a
+  preview of how it will look in both light and dark themes. Settings keeps a
+  summary of each vault that links here.
+- **Pebble setup, per gesture.** The setup dialog lists the steps for each
+  gesture in its own colour, and says when that gesture last delivered a
+  recording, so a webhook entry that was never added shows up there.
+- **Run order.** The routing rules screen shows, for either gesture, the
+  common rules and that gesture's own rules in the order they are tried, then
+  the inbox it falls back to. It is built by the same code that routes.
+
+### Changed
+- The gesture selector no longer shows a checkmark, which crowded long names;
+  the selected gesture is filled and bold.
+
 ## v0.19.2 — 2026-11-09
 
 ### Fixed

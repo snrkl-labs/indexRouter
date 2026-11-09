@@ -88,4 +88,16 @@ class GroupChainTest {
         assertTrue(TriggerHeader.parse("carried-over") is TriggerHeader.Unknown)
         assertTrue(TriggerHeader.parse("triple-click") is TriggerHeader.Unknown)
     }
+
+    @Test
+    fun `the run-order chain is common plus that gesture, by priority then id`() {
+        val rules = listOf(
+            rule(4, "meeting", ActionType.FILE, RuleGroup.DOUBLE_CLICK_HOLD, priority = 10),
+            rule(3, "task", ActionType.TASK, RuleGroup.SINGLE_CLICK_HOLD, priority = 10),
+            rule(2, "timer", ActionType.TIMER, RuleGroup.COMMON, priority = 10),
+            rule(1, "blog", ActionType.FILE, RuleGroup.SINGLE_CLICK_HOLD, priority = 30),
+        )
+        assertEquals(listOf(2L, 3L, 1L), chainFor(rules, RuleGroup.SINGLE_CLICK_HOLD).map { it.id })
+        assertEquals(listOf(2L, 4L), chainFor(rules, RuleGroup.DOUBLE_CLICK_HOLD).map { it.id })
+    }
 }

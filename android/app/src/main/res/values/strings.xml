@@ -19,7 +19,7 @@
     <string name="alert_trigger_refused_title">Recording refused</string>
     <string name="alert_trigger_refused_body">The webhook did not say which ring gesture sent it (%1$s), so nothing was filed. Check the gesture’s webhook entry in the Pebble app.</string>
     <string name="alert_group_unassigned_title">No vault for %1$s</string>
-    <string name="alert_group_unassigned_body">A %1$s recording arrived, but that gesture has no vault yet, so nothing was written. Set one in Settings → Triggers. Pebble resends the recording for a few minutes, and it is filed once a vault is set.</string>
+    <string name="alert_group_unassigned_body">A %1$s recording arrived, but that gesture has no vault yet, so nothing was written. Set one in Triggers. Pebble resends the recording for a few minutes, and it is filed once a vault is set.</string>
     <string name="alert_group_unreachable_title">%1$s vault unreachable</string>
     <string name="alert_group_unreachable_body">Could not reach the %1$s vault (%2$s). Nothing was written anywhere. Pebble resends the recording for up to ten minutes, and it is filed if the vault comes back.
 
@@ -61,6 +61,30 @@
     <string name="common_conflict_keep_app">Keep the app’s</string>
     <string name="base_folder_shared">The %1$s gesture already uses that folder in this vault. Each gesture needs its own base folder, because each keeps its own config file there.</string>
     <string name="settings_vault_for">Vault for</string>
+    <string name="triggers_title">Triggers</string>
+    <string name="action_run_order">Run order</string>
+    <string name="run_order_title">Run order</string>
+    <string name="run_order_for">For a recording from</string>
+    <string name="run_order_body">A %1$s recording is checked against these, top to bottom, and the first match wins. Common rules sit among the gesture\'s own by priority. Disabled rules are left out.</string>
+    <string name="run_order_detail">%1$s · %2$s · priority %3$d</string>
+    <string name="run_order_empty">No enabled rules.</string>
+    <string name="run_order_default">Otherwise: %1$s\'s inbox</string>
+    <string name="run_order_default_sub">The default route, for anything nothing above matched</string>
+    <string name="action_triggers">Triggers: vaults, names and colours</string>
+    <string name="triggers_intro">Each ring gesture files into its own vault, using the common rules and its own. Names and colours are shown on the rules screen, the routing log and the Pebble setup steps.</string>
+    <string name="triggers_gesture_sub">The %1$s gesture. Its file and task rules, inbox and recordings go to the vault below.</string>
+    <string name="trigger_name">Name</string>
+    <string name="trigger_colour">Colour</string>
+    <string name="trigger_rename_title">Rename</string>
+    <string name="trigger_rename_body">Leave blank to use the default, %1$s.</string>
+    <string name="trigger_colour_title">Colour for %1$s</string>
+    <string name="trigger_colour_hex">Custom colour (hex)</string>
+    <string name="trigger_colour_hex_invalid">Six hex digits, such as #5A7BA8</string>
+    <string name="trigger_colour_preview">As it will be drawn</string>
+    <string name="trigger_colour_default">Default</string>
+    <string name="trigger_preview_light">Light theme</string>
+    <string name="trigger_preview_dark">Dark theme</string>
+    <string name="settings_vault_in_triggers">Change the vault in Triggers</string>
     <string name="settings_vault_unassigned">No vault set. Recordings from this gesture are not filed until one is.</string>
     <string name="action_unassign_vault">Remove vault</string>
     <string name="group_carried_over_sub">The vault this app used before. Its rules run for neither gesture until it is given to one in Settings.</string>
@@ -70,7 +94,7 @@
     <string name="action_open_triggers">Set up vaults</string>
     <string name="group_common_sub">Run for either gesture, in priority order with that gesture’s own rules. Timer, calendar and dictation only.</string>
     <string name="group_vault_sub">Writes to %1$s</string>
-    <string name="group_no_vault_sub">No vault set — choose one in Settings</string>
+    <string name="group_no_vault_sub">No vault set — choose one in Triggers</string>
     <string name="group_add_rule">Add a rule to %1$s</string>
     <string name="group_expand">Expand group</string>
     <string name="group_collapse">Collapse group</string>
@@ -121,7 +145,15 @@
     <string name="action_overlay_settings">Fix background launching</string>
 
     <string name="setup_dialog_title">Pebble app setup</string>
-    <string name="setup_hint">In the Pebble app: Settings → Index → Webhooks. Set the trigger to double-click-hold, paste the URL, and add a header with the name and value below.</string>
+    <string name="setup_hint">In the Pebble app, each hold gesture needs its own webhook entry with the URL and header below. The steps for each gesture follow.</string>
+    <string name="setup_gesture_title">%1$s (%2$s)</string>
+    <string name="setup_gesture_single">click and hold</string>
+    <string name="setup_gesture_double">double-click and hold</string>
+    <string name="setup_gesture_step_button">1. Index → Ring Button → %1$s → Webhook only.</string>
+    <string name="setup_gesture_step_webhook">2. Index → Webhooks → add an entry with trigger %1$s, the URL and Authorization header above, and payload Recording + Transcription.</string>
+    <string name="setup_gesture_last_heard">Last recording received: %1$s</string>
+    <string name="setup_gesture_never_heard">Nothing received from this gesture yet</string>
+    <string name="setup_gesture_no_vault">No vault set for this gesture — recordings are not filed until one is.</string>
     <string name="setup_url_label">Webhook URL</string>
     <string name="setup_secret_label">Header value (name: Authorization)</string>
     <string name="action_copy_url">Copy URL</string>

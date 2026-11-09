@@ -24,9 +24,7 @@ class RoutingClassifier(private val rules: List<RoutingRule>) {
         val haystack = normalise(transcript)
         val words = haystack.split(' ').filter { it.isNotBlank() }
 
-        val ordered = rules
-            .filter { trigger == null || it.group == RuleGroup.COMMON || (trigger.isTrigger && it.group == trigger) }
-            .sortedWith(compareBy({ it.priority }, { it.id }))
+        val ordered = chainFor(rules, trigger)
 
         val hit = ordered
             .asSequence()
@@ -73,3 +71,15 @@ class RoutingClassifier(private val rules: List<RoutingRule>) {
             .replace(Regex(" +"), " ")
             .trim()
 }
+
+/**
+ * The rules a recording from [trigger] is checked against, in the order they
+ * are checked: the common rules and that gesture's own, by priority then id.
+ * The other gesture's rules are never in it. Null means every rule.
+ *
+ * The one definition of the order, shared by routing and by the rules screen's
+ * run-order view, so what is shown is what runs.
+ */
+fun chainFor(rules: List<RoutingRule>, trigger: RuleGroup?): List<RoutingRule> = rules
+    .filter { trigger == null || it.group == RuleGroup.COMMON || (trigger.isTrigger && it.group == trigger) }
+    .sortedWith(compareBy({ it.priority }, { it.id }))

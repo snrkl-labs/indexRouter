@@ -19,6 +19,7 @@ class LogKeeperTest {
 
     /** Enough of the DAO to hold rows in a list and answer the queries about them. */
     private class FakeLogDao : RoutingLogDao {
+    override suspend fun lastReceivedFor(trigger: String): Long? = null
         val rows = mutableListOf<RoutingLogEntity>()
         private var nextId = 1L
 

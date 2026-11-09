@@ -56,6 +56,7 @@ import org.snrkl.indexrouter.ui.common.CardValueRow
 import org.snrkl.indexrouter.ui.common.OnResume
 import org.snrkl.indexrouter.ui.common.OutlinedCard
 import org.snrkl.indexrouter.ui.common.SettingCard
+import org.snrkl.indexrouter.ui.common.GestureSelector
 import org.snrkl.indexrouter.ui.theme.GroupColor
 import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 
@@ -73,16 +74,13 @@ import org.snrkl.indexrouter.ui.theme.rememberGroupColors
 internal fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
-    onChooseVault: () -> Unit,
-    onChooseBaseFolder: () -> Unit,
-    onOpenFileAccess: () -> Unit,
+    onOpenTriggers: (RuleGroup) -> Unit,
     onOpenNotificationChannels: () -> Unit,
     onOpenInputMethodSettings: () -> Unit,
     hasAllFilesAccess: () -> Boolean,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val message by viewModel.messages.collectAsStateWithLifecycle()
-    val nested by viewModel.nestedGrant.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     var editing by remember { mutableStateOf<TextSetting?>(null) }
@@ -145,10 +143,10 @@ internal fun SettingsScreen(
                 onSelect = viewModel::selectGroup,
             )
 
-            // The vault is granted, not chosen, so it takes the outlined card
-            // the rules screen uses for the things that are not choices. Its
-            // border, and the two cards after it, wear the gesture's colour:
-            // everything down to the end of Tasks belongs to that gesture.
+            // The vault itself — which folder, base folder, access — is set on
+            // the Triggers screen, with the gesture's name and colour. Shown
+            // here so the cards below are never read without knowing which
+            // vault they describe.
             OutlinedCard(border = gestureColor?.accent ?: MaterialTheme.colorScheme.outline) {
                 Text(
                     text = stringResource(R.string.settings_group_vault),
@@ -156,69 +154,23 @@ internal fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
-                if (!state.vaultAssigned) {
-                    Text(
-                        text = stringResource(R.string.settings_vault_unassigned),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                }
-                if (!state.vaultAssigned && state.carriedOverPath != null) {
-                    FilledTonalButton(
-                        onClick = viewModel::useCarriedOver,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            stringResource(
-                                R.string.settings_use_carried_over,
-                                state.carriedOverPath.orEmpty().substringAfterLast('/'),
-                                state.groupNames[state.group] ?: state.group.defaultName,
-                            ),
-                        )
-                    }
-                }
-                // The pill holds the vault's own name; a full path does not fit
-                // on one line and was being cut to its least useful part.
                 CardValueRow(
                     label = stringResource(R.string.settings_vault_root),
-                    value = when (state.storageMode) {
-                        StorageMode.FILES -> state.vaultRoot?.trimEnd('/')?.substringAfterLast('/')
-                            ?: stringResource(R.string.vault_root_unset)
-                        StorageMode.SAF -> stringResource(R.string.settings_vault_saf)
+                    value = if (state.vaultAssigned) {
+                        state.vaultRoot?.trimEnd('/')?.substringAfterLast('/')
+                            ?: stringResource(R.string.settings_vault_saf)
+                    } else {
+                        stringResource(R.string.vault_root_unset)
                     },
-                    onClick = onChooseVault,
-                    note = state.vaultRoot.takeIf { state.storageMode == StorageMode.FILES },
+                    onClick = { onOpenTriggers(state.group) },
                 )
                 CardValueRow(
                     label = stringResource(R.string.settings_base_folder),
                     value = state.baseDir.ifBlank { stringResource(R.string.settings_base_is_root) },
-                    onClick = onChooseBaseFolder,
+                    onClick = { onOpenTriggers(state.group) },
                 )
-                // Storage Scopes grants access without "all files", so the
-                // permission alone says nothing; a vault whose folders all
-                // proved writable has access, whatever granted it.
-                val accessProven = state.requirements.isNotEmpty() && state.requirements.all { it.satisfied }
-                val accessMissing = state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess && !accessProven
-                CardValueRow(
-                    label = stringResource(R.string.settings_file_access),
-                    value = if (accessMissing) {
-                        stringResource(R.string.settings_file_access_missing)
-                    } else {
-                        stringResource(R.string.settings_file_access_granted)
-                    },
-                    onClick = onOpenFileAccess,
-                    note = if (accessMissing) {
-                        stringResource(R.string.vault_needs_all_files)
-                    } else {
-                        null
-                    },
-                )
-                FolderChecklist(state)
-                if (state.vaultAssigned) {
-                    TextButton(onClick = viewModel::unassignVault) {
-                        Text(stringResource(R.string.action_unassign_vault))
-                    }
+                TextButton(onClick = { onOpenTriggers(state.group) }) {
+                    Text(stringResource(R.string.settings_vault_in_triggers))
                 }
             }
 
@@ -534,58 +486,6 @@ internal fun SettingsScreen(
         )
     }
 
-    nested?.let { grant ->
-        AlertDialog(
-            onDismissRequest = { viewModel.nestedGrantDismissed() },
-            title = { Text(stringResource(R.string.grant_nested_title)) },
-            text = { Text(stringResource(R.string.grant_nested_body, grant.folderName, grant.baseDir)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.nestedGrantDismissed()
-                    onChooseVault()
-                }) { Text(stringResource(R.string.grant_choose_again)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.adoptGrantedFolderAsBase(grant.folderName) }) {
-                    Text(stringResource(R.string.grant_adjust_paths))
-                }
-            },
-        )
-    }
-}
-
-/**
- * Every folder the configuration needs, with its state.
- *
- * Under Storage Scopes this is not one permission but several, and a missing
- * one is invisible until a note goes nowhere — so it is listed here rather than
- * summarised as a count.
- */
-@Composable
-private fun FolderChecklist(state: SettingsUiState) {
-    if (state.requirements.isEmpty()) return
-    Column(modifier = Modifier.padding(top = 8.dp)) {
-        Text(
-            text = stringResource(R.string.vault_folders_heading),
-            style = MaterialTheme.typography.labelLarge,
-        )
-        state.requirements.forEach { requirement ->
-            Text(
-                text = stringResource(
-                    if (requirement.satisfied) R.string.vault_folder_ok else R.string.vault_folder_blocked,
-                    requirement.folderPath,
-                    requirement.reason,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (requirement.satisfied) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-    }
 }
 
 /** The settings that are just a value to type. */
@@ -711,43 +611,4 @@ private fun bodyFor(setting: TextSetting) = when (setting) {
     is TextSetting.VoiceBuffer -> R.string.settings_voice_buffer_body
     is TextSetting.CalendarPackage -> R.string.settings_calendar_package_body
     is TextSetting.LogRetention -> R.string.settings_log_retention_body
-}
-
-/**
- * Which gesture's vault the cards below describe. A segmented button: two
- * mutually exclusive choices, always visible, named rather than coloured.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun GestureSelector(
-    selected: RuleGroup,
-    names: Map<RuleGroup, String>,
-    colors: Map<RuleGroup, GroupColor>,
-    onSelect: (RuleGroup) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = stringResource(R.string.settings_vault_for),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            RuleGroup.TRIGGERS.forEachIndexed { index, group ->
-                SegmentedButton(
-                    selected = group == selected,
-                    onClick = { onSelect(group) },
-                    shape = SegmentedButtonDefaults.itemShape(index, RuleGroup.TRIGGERS.size),
-                    colors = colors[group]?.let { c ->
-                        SegmentedButtonDefaults.colors(
-                            activeContainerColor = c.container,
-                            activeContentColor = c.onContainer,
-                            inactiveContentColor = c.onContainer,
-                        )
-                    } ?: SegmentedButtonDefaults.colors(),
-                ) {
-                    Text(names[group] ?: group.defaultName, maxLines = 1)
-                }
-            }
-        }
-    }
 }
