@@ -5,16 +5,19 @@
 An Android companion for the **Pebble Index 01** ring. Click-hold or
 double-click-hold the ring, say what you want, and indexRouter files it where
 it belongs: a note in your Obsidian vault, a task, a timer, a calendar event,
-or text for your keyboard to type.
+or text for your keyboard to type. Each gesture can file into a vault of its
+own.
+
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22org.snrkl.indexrouter%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fsnrkl-labs%2FindexRouter%22%2C%22author%22%3A%22snrkl-labs%22%2C%22name%22%3A%22indexRouter%22%7D"><img src="assets/badge_obtainium.png" alt="Get it on Obtainium" width="161"></a>
 
 It works through the Pebble app's **webhook** feature. The Pebble app records
-and transcribes; indexRouter receives the result on the phone itself, matches
-the first words against a keyword routing table you edit, and acts on it.
+and transcribes. indexRouter receives the result on the phone itself, matches
+the opening words against a keyword routing table you edit, and acts on it.
 
 **Everything stays on the phone.** The receiver binds `127.0.0.1` only, every
 request must carry a shared secret, and nothing is sent anywhere else.
 
-<img src="screenshots/main.png" width="220" alt="Main screen: receiver running, vault granted, secret set"> <img src="screenshots/rules.png" width="220" alt="Routing rules, each a type, a priority and its keywords"> <img src="screenshots/rule-expanded.png" width="220" alt="A rule opened up: folder, keywords, tags and keyword stripping">
+<img src="screenshots/main.png" width="240" alt="Main screen: receiver running, and each gesture with its vault and when it last synced"> <img src="screenshots/triggers.png" width="240" alt="Triggers: the click-hold gesture's name, colour, vault and the folders it needs"> <img src="screenshots/routing-log.png" width="240" alt="The routing log: what was said, which gesture sent it, which vault it went to, and where it landed">
 
 ## What it can do with a recording
 
@@ -23,57 +26,90 @@ Each rule in the routing table pairs one or more keywords with an action:
 | Action | What happens |
 |---|---|
 | **File** | A new note in a folder of your vault, with tags, Dataview-friendly frontmatter, and the recording saved alongside it. |
-| **Task** | A Tasks-plugin task, one file per task, pulled into your daily note by a query rather than written into it — so a capture never races your vault's sync. |
+| **Task** | A Tasks-plugin task, one file per task, pulled into your daily note by a query rather than written into it, so a capture never races your vault's sync. |
 | **Timer** | Starts a timer through the standard Android `SET_TIMER` intent, labelled with what you said. |
 | **Calendar** | Opens a new event, either built from the phrase or handed to a calendar app that can parse "lunch tomorrow at noon" itself. |
 | **Dictation** | Writes nothing at all. The text waits, briefly, for your keyboard's mic key to type it into whatever field has focus. |
 
-Anything that matches no rule still becomes a note, with a notification, so a
-recording is never lost silently.
+Anything that matches no rule still becomes a note in that gesture's inbox,
+with a notification, so a recording is never lost silently.
 
-### Also
+<img src="screenshots/rules.png" width="240" alt="Routing rules: the common rules, then each gesture's own, in its colour"> <img src="screenshots/rule-expanded.png" width="240" alt="A rule opened up: folder, keywords, tags and keyword stripping"> <img src="screenshots/run-order.png" width="240" alt="Run order: the rules a click-hold recording is checked against, top to bottom">
 
-- **Re-route** an item from the log if it landed in the wrong place. The file is
-  moved and reformatted; the classifier is not second-guessed.
+## Two gestures, two vaults
+
+Click-hold and double-click-hold are separate **triggers**. Each one has:
+
+- **its own vault**, and the folder inside it the app writes into;
+- **its own rules** for files and tasks, and its own inbox for anything
+  unmatched;
+- **a name and a colour**, used on the rules screen, the routing log, the
+  Pebble setup steps and its notifications, so you can tell at a glance which
+  gesture did what.
+
+Timer, calendar and dictation rules need no vault, so they are **common**: one
+set, used by both gestures. **Run order** on the rules screen shows exactly
+which rules a recording from either gesture is checked against, and in what
+order, using the same code that does the routing.
+
+A recording is never written to the other gesture's vault. If a gesture's
+vault cannot be reached, nothing is written anywhere and the Pebble app is
+asked to resend, so the recording arrives once the vault is back.
+
+<img src="screenshots/colour.png" width="240" alt="Choosing a gesture's colour, with a preview of how it looks in light and dark themes"> <img src="screenshots/pebble-setup.png" width="240" alt="Pebble setup: the URL and secret, then each gesture's steps, and when it last sent a recording (the secret shown is a throwaway)">
+
+## Also
+
+- **Each vault's rules live in that vault** as a Markdown file you can edit by
+  hand. That file is also the backup: reinstall, choose the vault again, and
+  the rules come back. **Sync now** reads a file changed elsewhere before
+  anything is written over it.
+- **Re-route** an item from the log if it landed in the wrong place. The file
+  is moved and reformatted.
 - **Keyword stripping**, per rule: "Task buy milk" files as *buy milk*.
 - **Maps of Content** for each folder, generated on demand as live Dataview
   queries, with timestamped backups of anything they overwrite.
 - **A routing log** of every recording and what happened to it. It keeps
-  content for 2 hours by default, can be cleared, and notifications leave out
-  what was said unless you turn detailed logging on.
+  content for 2 hours by default and can be cleared.
+- **Private by default.** Notifications name the gesture and the folder, but
+  leave out what was said, and the note's file name, unless you turn on
+  detailed content logging. The log does the same for dictations.
 - **A notification channel per route**, so each can have its own sound.
-- **Two vaults, one per ring gesture.** Click-hold and double-click-hold can
-  each file into their own vault, with their own rules. Timer, calendar and
-  dictation rules are shared by both, and a recording is never written to the
-  other gesture's vault. If a vault cannot be reached, nothing is written and
-  the Pebble app is asked to resend.
-- **Each vault's rules live in that vault** as a Markdown file you can edit by
-  hand, which also makes it the backup: reinstall, grant the folder, and the
-  rules come back. The file describes its own vault only.
 
-<img src="screenshots/routing-log.png" width="220" alt="The routing log: what was said, which rule caught it, and where it went"> <img src="screenshots/settings-privacy.png" width="220" alt="Privacy, calendar route and ring dictation settings">
+<img src="screenshots/settings-privacy.png" width="240" alt="Privacy, calendar route and ring dictation settings">
+
+### Light and dark
+
+Gesture colours are adjusted for each theme, so they stay readable whichever
+you use and sit with your wallpaper's colours where Android provides them.
+
+<img src="screenshots/main-dark.png" width="240" alt="Main screen in the dark theme"> <img src="screenshots/triggers-dark.png" width="240" alt="Triggers in the dark theme"> <img src="screenshots/routing-log-dark.png" width="240" alt="The routing log in the dark theme">
 
 ## Requirements
 
 - Android 10 or later.
 - A **Pebble Index 01** and the Pebble app, with its webhook feature.
 - An **Obsidian vault** in ordinary shared storage, not Obsidian's app-private
-  folder.
-- Optional: a clock app that handles `SET_TIMER`, a calendar app, and a keyboard
-  whose mic key can switch to another voice input method (HeliBoard does).
+  folder. Two, if you want each gesture to file separately.
+- Optional: a clock app that handles `SET_TIMER`, a calendar app, and a
+  keyboard whose mic key can switch to another voice input method (HeliBoard
+  does).
 
 ## Install
 
 ### With Obtainium (recommended)
 
-Add this repository as an app source:
+Tap **Get it on Obtainium** above on your phone, or add this repository as an
+app source by hand:
 
 ```
 https://github.com/snrkl-labs/indexRouter
 ```
 
-Each release carries exactly one APK, so no filter is needed. Obtainium will
-then offer each new release as an update.
+Each release carries exactly one APK, so no filter is needed. Obtainium then
+offers each new release as an update. Test builds are published as
+pre-releases; Obtainium ignores them unless you turn on **Include
+prereleases** for the app.
 
 ### By hand
 
@@ -95,32 +131,66 @@ will not update across signing keys. Uninstall the old build first.
 
 ## Setup
 
-1. **Choose a vault for each gesture.** In Triggers, pick the gesture, then its
-   vault and the folder inside it the app writes into — `_RingRing` by
-   default, and it may be nested, such as `Inbox/_RingRing`. Grant that folder
-   plus any folders your file rules target. On GrapheneOS this is answered with
-   Storage Scopes, and the app sees only the folders you grant. Without
-   either, the app opens files that other apps wrote in the vault, such as
-   files changed by sync, through the grant from picking the vault. A gesture
-   with no vault files nothing.
-2. **Generate a webhook secret** in the app. It is stored encrypted under an
-   Android Keystore key, and shown so you can copy it.
-3. **In the Pebble app:** Settings → Index → Webhooks. Set the trigger to
-   click-hold, double-click-hold, or both (each has its own webhook entry), paste
-   `http://127.0.0.1:8787/webhook` as the URL, and add an `Authorization`
-   header with the secret as its value.
+1. **Generate a webhook secret** in the app. It is stored encrypted under an
+   Android Keystore key, and shown in **Pebble app setup** so you can copy it.
+2. **Choose a vault for each gesture.** Open **Triggers**, pick the gesture,
+   then choose its vault and the folder inside it the app writes into
+   (`_RingRing` by default; it may be nested, such as `Inbox/_RingRing`). The
+   checklist below shows the folders your rules need. A gesture with no vault
+   files nothing, so leave one unassigned if you only use the other. Name and
+   colour each gesture here too, if you like.
+3. **In the Pebble app**, follow the steps **Pebble app setup** shows for each
+   gesture: set the ring button gesture to *Webhook only*, then add a webhook
+   entry with that gesture as its trigger, `http://127.0.0.1:8787/webhook` as
+   the URL, an `Authorization` header with the secret as its value, and
+   *Recording + Transcription* as the payload. The dialog then shows when each
+   gesture last sent a recording, so a missing entry is easy to spot.
 4. **On GrapheneOS**, grant both apps the Network permission: it governs
-   loopback traffic too.
+   loopback traffic too. If you use Storage Scopes, grant the vault folders
+   there; otherwise the app reads files that other apps wrote in the vault,
+   such as files changed by sync, through the permission given when you chose
+   the vault.
 5. **For timers and calendar events to fire directly**, grant "Display over
    other apps". Without it, Android blocks the app starting them from the
-   background and each one arrives as a notification to tap.
-6. **For ring dictation**, enable indexRouter as an input method in Android's
-   on-screen keyboard settings. Your keyboard's mic key then commits the latest
-   dictation instead of listening.
+   background, and each one arrives as a notification to tap.
+6. **For ring dictation**, set up your keyboard's mic key as described in
+   [Ring dictation](#ring-dictation).
 
-Then edit the routing table to suit.
+Then edit the routing rules to suit, and check **Run order** to see how they
+combine.
 
-<img src="screenshots/pebble-setup.png" width="220" alt="The URL and secret to paste into the Pebble app (the secret shown is a throwaway)"> <img src="screenshots/settings-vault.png" width="220" alt="Vault settings, with a checklist of the folders this setup needs">
+## Ring dictation
+
+A recording that starts with your dictation keyword ("dictation" by default)
+is not filed anywhere. indexRouter holds the text, and the next time you tap
+your keyboard's mic key it types that text into whatever field has focus. This
+works with any keyboard whose mic key switches to another voice input method.
+The steps here use [HeliBoard](https://github.com/HeliBorg/HeliBoard).
+
+1. **Install HeliBoard** and make it your keyboard.
+2. **Enable indexRouter as an input method.** In indexRouter, open
+   **Settings → Ring dictation → Enable as an input method**, which takes you
+   to Android's on-screen keyboard list, and turn on *indexRouter — Ring
+   dictation*. Android warns that any input method could read what you type.
+   indexRouter's has no keys: it only types the dictation you sent from the
+   ring, then hands straight back to your keyboard.
+3. **Check it is reachable.** Back in **Settings → Ring dictation**, the app
+   should say *The mic key will reach this*. If it names another app instead,
+   that app's voice input is ahead of indexRouter's. Turn it off in the same
+   keyboard list.
+4. **Keep HeliBoard's mic key in view.** The mic is on HeliBoard's toolbar by
+   default. To stop suggestions hiding it, open HeliBoard's settings →
+   **Toolbar → Select pinned toolbar keys** and turn on **Voice input**.
+5. **Use it.** Say "dictation" and your text on the ring. Then tap a text
+   field and tap the mic. The text appears, and HeliBoard comes back.
+
+A dictation is offered for 10 minutes by default (**Dictation age cutoff**),
+so an old one is never typed by accident. Its text is kept only in the routing
+log, and the log hides it unless detailed content logging is on.
+
+<img src="screenshots/dictation-keyboards.png" width="240" alt="Android's on-screen keyboard list with HeliBoard and indexRouter's Ring dictation both turned on"> <img src="screenshots/dictation-settings.png" width="240" alt="indexRouter's Ring dictation settings, confirming the mic key will reach it"> <img src="screenshots/dictation-heliboard-pin.png" width="240" alt="HeliBoard's pinned toolbar keys, with Voice input turned on">
+
+<img src="screenshots/dictation-committed.png" width="240" alt="A message field after tapping HeliBoard's mic key: the ring dictation has been typed in">
 
 ## Build from source
 
@@ -139,3 +209,6 @@ change: `indexrouter.applicationId` in `android/gradle.properties` and
 
 Copyright © snrkl-labs. Licensed under the
 [GNU General Public License v3.0 or later](LICENSE).
+
+The "Get it on Obtainium" badge is from the
+[Obtainium](https://github.com/ImranR98/Obtainium) project.
