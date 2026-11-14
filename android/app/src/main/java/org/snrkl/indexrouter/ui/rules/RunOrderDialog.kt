@@ -30,6 +30,7 @@ import org.snrkl.indexrouter.R
 import org.snrkl.indexrouter.routing.RoutingRule
 import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.routing.chainFor
+import org.snrkl.indexrouter.routing.VaultMode
 import org.snrkl.indexrouter.ui.common.GestureSelector
 import org.snrkl.indexrouter.ui.theme.GroupColor
 
@@ -46,10 +47,11 @@ internal fun RunOrderDialog(
     rules: List<RoutingRule>,
     names: Map<RuleGroup, String>,
     colors: Map<RuleGroup, GroupColor>,
+    mode: VaultMode,
     onDismiss: () -> Unit,
 ) {
     var gesture by remember { mutableStateOf(RuleGroup.SINGLE_CLICK_HOLD) }
-    val chain = chainFor(rules, gesture).filter { it.enabled && it.keywords.any(String::isNotBlank) }
+    val chain = chainFor(rules, gesture, mode).filter { it.enabled && it.keywords.any(String::isNotBlank) }
     val gestureName = names[gesture] ?: gesture.defaultName
 
     AlertDialog(
@@ -68,7 +70,7 @@ internal fun RunOrderDialog(
                     label = stringResource(R.string.run_order_for),
                 )
                 Text(
-                    stringResource(R.string.run_order_body, gestureName),
+                    if (mode.perGesture) stringResource(R.string.run_order_body, gestureName) else stringResource(R.string.run_order_body_one, gestureName),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -79,10 +81,12 @@ internal fun RunOrderDialog(
                         detail = stringResource(
                             R.string.run_order_detail,
                             rule.action.displayName,
-                            names[rule.group] ?: rule.group.defaultName,
+                            whoseLabel(rule, mode, names),
                             rule.priority,
                         ),
-                        color = colors[rule.group],
+                        // In one vault the group is not something to show:
+                        // a rule is coloured by its gesture, or not at all.
+                        color = if (mode.perGesture) colors[rule.group] else rule.gesture?.let { colors[it] },
                     )
                 }
                 if (chain.isEmpty()) {
@@ -90,14 +94,29 @@ internal fun RunOrderDialog(
                 }
                 ChainRow(
                     number = "→",
-                    title = stringResource(R.string.run_order_default, gestureName),
+                    title = if (mode.perGesture) {
+                        stringResource(R.string.run_order_default, gestureName)
+                    } else {
+                        stringResource(R.string.run_order_default_one)
+                    },
                     detail = stringResource(R.string.run_order_default_sub),
-                    color = colors[gesture],
+                    color = if (mode.perGesture) colors[gesture] else null,
                 )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
     )
+}
+
+/** Which group a rule is in, as the run order names it, with its gesture if it has one. */
+@Composable
+private fun whoseLabel(rule: RoutingRule, mode: VaultMode, names: Map<RuleGroup, String>): String {
+    val gesture = rule.gesture?.let { names[it] ?: it.defaultName }
+    return when {
+        !mode.perGesture -> gesture ?: stringResource(R.string.gesture_any)
+        gesture != null -> stringResource(R.string.run_order_group_gesture, names[rule.group] ?: rule.group.defaultName, gesture)
+        else -> names[rule.group] ?: rule.group.defaultName
+    }
 }
 
 @Composable

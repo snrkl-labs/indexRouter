@@ -206,7 +206,10 @@ object ConfigCodec {
           under `base-dir`, not a path. A recording that matches none of them goes to
           `fallback-dir`.
         - `common` — rules that need no vault: timer, calendar and dictation. They are
-          evaluated before the rules above. Kept here so a reinstall restores them.
+          evaluated alongside the rules above, by priority. Kept here so a reinstall
+          restores them.
+        - `gesture` — on any rule: `any`, `single-click-hold` or `double-click-hold`.
+          A rule limited to one gesture is skipped for recordings from the other.
 
         This file is also the config backup: after a reinstall, grant the vault folder
         and reload to restore everything above. The app's own settings (port,

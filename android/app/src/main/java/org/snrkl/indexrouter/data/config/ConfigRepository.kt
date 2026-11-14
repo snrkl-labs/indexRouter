@@ -21,6 +21,7 @@ import org.snrkl.indexrouter.routing.MatchType
 import org.snrkl.indexrouter.routing.RoutingRule
 import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.routing.Tags
+import org.snrkl.indexrouter.routing.VaultMode
 import org.snrkl.indexrouter.service.Notifications
 import org.snrkl.indexrouter.vault.VaultStore
 
@@ -92,6 +93,7 @@ class ConfigRepository(
      * the first webhook is served.
      */
     suspend fun ensureInitialised(): SyncResult = withContext(Dispatchers.IO) {
+        settleOneVaultUpgrade()
         settings.vaultProfiles.forEach { upgradeReservedFolders(it) }
         if (rulesDao.count() > 0) {
             catchUpStaleVaults()
@@ -106,6 +108,45 @@ class ConfigRepository(
             return@withContext SyncResult.Loaded(rulesDao.count())
         }
         loadBundledDefaults("no vault config to load from")
+    }
+
+    /**
+     * Finishes an upgrade into one-vault mode, once there is something to do.
+     *
+     * - A vault from before there were two, still waiting for a gesture, is
+     *   given to the gesture that holds the one vault: with one vault there is
+     *   no choice to wait for.
+     * - Rules left in the other gesture's group (the bundled defaults it was
+     *   given in 0.20, or rules added for it) join the one vault limited to
+     *   that gesture, so they still answer only it. One whose keyword the
+     *   vault already uses for that gesture is dropped: it could never fire.
+     */
+    private suspend fun settleOneVaultUpgrade() {
+        if (upgradeSettled) return
+        upgradeSettled = true
+        val mode = settings.vaultMode
+        if (mode.perGesture) return
+        if (!settings.profile(mode.home).isAssigned && settings.carriedOver != null) {
+            assignCarriedOver(mode.home)
+        }
+        val other = mode.home.other ?: return
+        val stray = rulesDao.all().filter { it.groupId == other.wireName }
+        if (stray.isEmpty()) return
+        invalidateRules()
+        val kept = mutableListOf<RoutingRule>()
+        stray.forEach { entity ->
+            val moved = entity.toDomain().copy(group = mode.home, gesture = other)
+            val existing = rules().filter { it.id != entity.id && it.group != other } + kept
+            if (existing.none { mode.overlap(it, moved) && it.keywords.any { k -> k in moved.keywords } }) {
+                kept += moved
+            } else {
+                Log.i(AppIdentity.LOG_TAG, "Dropped ${other.wireName} rule '${entity.keywords}': its keyword is already in use")
+            }
+        }
+        rulesDao.clearGroup(other.wireName)
+        rulesDao.insertAll(kept.map { it.toEntity() })
+        invalidateRules()
+        if (settings.profile(mode.home).isAssigned) writeThroughToVault(mode.home)
     }
 
     private suspend fun upgradeReservedFolders(profile: VaultProfile) {
@@ -185,6 +226,7 @@ class ConfigRepository(
             }
         }
 
+        val pending = pendingRules(group)
         val groupRules = toEntities(document.routing, group)
         invalidateRules()
         rulesDao.clearGroup(group.wireName)
@@ -202,6 +244,9 @@ class ConfigRepository(
         upgradeReservedFolders(profile)
         profile.lastSyncedAt = System.currentTimeMillis()
         profile.usingFallbackConfig = false
+        // Rules sent to this vault before it was chosen, when a vault per
+        // gesture was switched on: kept beside the ones its file holds.
+        if (pending.isNotEmpty() && mergePending(group, pending) > 0) writeThroughUnrecorded(group)
         // A file in an older format is left exactly as it is — including the
         // device settings it still carries — and converted the next time an
         // edit writes it. Reading must never be what rewrites a file.
@@ -224,6 +269,30 @@ class ConfigRepository(
         }
     }
 
+    /**
+     * Rules waiting in [group] for a vault that has not been chosen yet. A
+     * vault per gesture was switched on and its rules were sent here, and the
+     * file about to be read must not erase them.
+     */
+    private suspend fun pendingRules(group: RuleGroup): List<RoutingRuleEntity> {
+        if (!group.isTrigger || !settings.profile(group).holdsPendingRules) return emptyList()
+        return rulesDao.all().filter { it.groupId == group.wireName }
+    }
+
+    /** Adds [pending] back into [group], skipping any whose keyword is now taken. Returns how many. */
+    private suspend fun mergePending(group: RuleGroup, pending: List<RoutingRuleEntity>): Int {
+        settings.profile(group).holdsPendingRules = false
+        val mode = settings.vaultMode
+        val present = rulesDao.all().map { it.toDomain() }
+        val added = pending.map { it.toDomain().copy(id = 0) }.filter { candidate ->
+            present.none { mode.overlap(it, candidate) && it.keywords.any { k -> k in candidate.keywords } }
+        }
+        if (added.isEmpty()) return 0
+        invalidateRules()
+        rulesDao.insertAll(added.map { it.toEntity() })
+        return added.size
+    }
+
     private suspend fun replaceCommon(blocks: List<RuleBlock>) {
         invalidateRules()
         rulesDao.clearGroup(RuleGroup.COMMON.wireName)
@@ -243,7 +312,7 @@ class ConfigRepository(
         // for a gesture, and a reset of the defaults is not a reason to lose them.
         RuleGroup.entries.filter { it != RuleGroup.CARRIED_OVER }.forEach { rulesDao.clearGroup(it.wireName) }
         rulesDao.insertAll(toEntities(document.common.orEmpty(), RuleGroup.COMMON))
-        RuleGroup.TRIGGERS.forEach { rulesDao.insertAll(toEntities(document.routing, it)) }
+        settings.vaultMode.vaultGroups.forEach { rulesDao.insertAll(toEntities(document.routing, it)) }
         settings.vaultProfiles.forEach { it.usingFallbackConfig = true }
         SyncResult.Fallback(reason)
     }
@@ -271,6 +340,8 @@ class ConfigRepository(
             return@withContext SyncResult.Failed(t.message ?: "config file unreadable").also { recordSync(group, it) }
         }
         if (existing != null) return@withContext reloadFromVault(group)
+        // No file yet: whatever is waiting in the group is what it starts with.
+        profile.holdsPendingRules = false
 
         if (rulesDao.all().none { it.groupId == group.wireName }) {
             bundled()?.let { invalidateRules(); rulesDao.insertAll(toEntities(it.routing, group)) }
@@ -301,6 +372,127 @@ class ConfigRepository(
         onVaultAssigned(gesture)
     }
 
+    @Volatile
+    private var upgradeSettled = false
+
+    // ---- switching between one vault and a vault per gesture -------------------
+
+    /** What switching a vault per gesture on would do with the rules. For the preview. */
+    data class OnPreview(
+        /** Timer, calendar and dictation rules: stay common, keeping their gesture. */
+        val common: List<RoutingRule>,
+        /** Rules limited to the other gesture: go to its vault. */
+        val toOther: List<RoutingRule>,
+        /** Rules for either gesture: stay with the kept vault, or are copied to both. */
+        val either: List<RoutingRule>,
+        /** Rules limited to the gesture keeping the vault: stay, and stop needing the limit. */
+        val toKept: List<RoutingRule>,
+    )
+
+    suspend fun previewOn(keptBy: RuleGroup): OnPreview {
+        val mode = settings.vaultMode
+        val inVault = rules().filter { it.group == mode.home }
+        return OnPreview(
+            common = rules().filter { it.group == RuleGroup.COMMON },
+            toOther = inVault.filter { it.gesture == keptBy.other },
+            either = inVault.filter { it.gesture == null },
+            toKept = inVault.filter { it.gesture == keptBy },
+        )
+    }
+
+    /**
+     * One vault → a vault per gesture.
+     *
+     * The vault stays with [keptBy]. Its rules limited to the other gesture
+     * move to the other gesture's group, waiting for that vault to be chosen;
+     * those for either gesture stay, or are also copied across when
+     * [copyEitherToBoth]. Common rules keep their gestures. Nothing is
+     * deleted from the vault.
+     */
+    suspend fun switchToPerGesture(keptBy: RuleGroup, copyEitherToBoth: Boolean) = withContext(Dispatchers.IO) {
+        val mode = settings.vaultMode
+        require(!mode.perGesture && keptBy.isTrigger)
+        val other = keptBy.other!!
+        invalidateRules()
+        if (keptBy != mode.home) {
+            // The vault's settings and rules change hands; so do the log rows
+            // that point into it, so re-routing from the log still finds it.
+            settings.moveVault(mode.home, keptBy)
+            rulesDao.clearGroup(keptBy.wireName)
+            rulesDao.moveGroup(mode.home.wireName, keptBy.wireName)
+            logDao?.moveVaultGroup(mode.home.wireName, keptBy.wireName)
+            logDao?.moveRuleGroup(mode.home.wireName, keptBy.wireName)
+        }
+        // Whatever the other gesture's group held is from before; it is
+        // replaced by what this switch sends it.
+        rulesDao.clearGroup(other.wireName)
+        val vaultRules = rulesDao.all().filter { it.groupId == keptBy.wireName }.map { it.toDomain() }
+        val stays = vaultRules.filter { it.gesture != other }.map { it.copy(gesture = null) }
+        val moves = vaultRules.filter { it.gesture == other }.map { it.copy(group = other, gesture = null) }
+        val copies = if (copyEitherToBoth) {
+            vaultRules.filter { it.gesture == null }
+                .filter { c -> moves.none { m -> m.keywords.any { it in c.keywords } } }
+                .map { it.copy(id = 0, group = other) }
+        } else {
+            emptyList()
+        }
+        rulesDao.insertAll((stays + moves).map { it.toEntity() })
+        rulesDao.insertAll(copies.map { it.toEntity() })
+        settings.vaultMode = VaultMode(perGesture = true, home = keptBy)
+        invalidateRules()
+        settings.profile(other).holdsPendingRules = moves.isNotEmpty() || copies.isNotEmpty()
+        if (settings.profile(other).isAssigned) {
+            // A vault the other gesture had before is still remembered: read
+            // it, keeping what was just sent there.
+            reloadFromVault(other)
+        }
+        if (settings.profile(keptBy).isAssigned) writeThroughToVault(keptBy)
+        Unit
+    }
+
+    /**
+     * A vault per gesture → one vault.
+     *
+     * [keep]'s vault becomes the one vault. The other vault is forgotten by
+     * the app but not touched: its file keeps its rules, and choosing it
+     * again later brings them back. With [bringAcross], its rules are also
+     * copied into the kept vault, limited to the gesture they answered. One
+     * whose keyword is already used for that gesture is skipped.
+     *
+     * @return how many rules were skipped.
+     */
+    suspend fun switchToOneVault(keep: RuleGroup, bringAcross: Boolean): Int = withContext(Dispatchers.IO) {
+        require(settings.vaultMode.perGesture && keep.isTrigger)
+        val other = keep.other!!
+        val one = VaultMode(perGesture = false, home = keep)
+        invalidateRules()
+        val all = rulesDao.all().map { it.toDomain() }
+        val theirs = all.filter { it.group == other }
+        rulesDao.clearGroup(other.wireName)
+        var skipped = 0
+        if (bringAcross) {
+            val present = all.filter { it.group != other }.toMutableList()
+            val brought = mutableListOf<RoutingRule>()
+            theirs.forEach { rule ->
+                val moved = rule.copy(id = 0, group = keep, gesture = other)
+                if (present.any { one.overlap(it, moved) && it.keywords.any { k -> k in moved.keywords } }) {
+                    skipped++
+                } else {
+                    present += moved
+                    brought += moved
+                }
+            }
+            rulesDao.insertAll(brought.map { it.toEntity() })
+        }
+        settings.profile(other).unassign()
+        settings.profile(other).lastSyncedAt = 0L
+        settings.vaultMode = one
+        settings.profile(other).holdsPendingRules = false
+        invalidateRules()
+        if (settings.profile(keep).isAssigned) writeThroughToVault(keep)
+        skipped
+    }
+
     /** Writes one vault's file: its layout, its gesture's rules, and the common copy. */
     suspend fun writeThroughToVault(group: RuleGroup): SyncResult =
         writeThroughUnrecorded(group).also { recordSync(group, it) }
@@ -324,9 +516,13 @@ class ConfigRepository(
             }
         }
         val all = rulesDao.all()
+        // With a vault per gesture, the vault says which gesture its rules
+        // answer, so the file says `any` for them.
+        val perGesture = settings.vaultMode.perGesture
         val document = ConfigDocument(
             layout = profile.toLayout(),
-            routing = all.filter { it.groupId == group.wireName }.map { it.toBlock() },
+            routing = all.filter { it.groupId == group.wireName }
+                .map { it.toBlock().let { b -> if (perGesture) b.copy(gesture = RuleBlock.GESTURE_ANY) else b } },
             common = all.filter { it.groupId == RuleGroup.COMMON.wireName }.map { it.toBlock() },
         )
         try {
@@ -405,18 +601,20 @@ class ConfigRepository(
         SyncResult.Loaded(rulesDao.count())
     }
 
-    suspend fun upsert(rule: RoutingRule): SaveResult = withContext(Dispatchers.IO) {
+    suspend fun upsert(input: RoutingRule): SaveResult = withContext(Dispatchers.IO) {
+        val rule = normalise(input)
         if (!rule.group.allows(rule.action)) {
             return@withContext SaveResult.Failed("${rule.action.displayName} rules cannot go in this group")
         }
         val entity = rule.toEntity()
         val mine = entity.keywords.split(',').filter { it.isNotBlank() }.toSet()
-        // A keyword must be unambiguous among the rules that are evaluated
-        // together: a gesture's own rules plus the common ones. The two
-        // gestures never see each other's rules, so each can have its own
-        // "task".
+        // A keyword must be unambiguous among the rules that can be checked
+        // against the same recording. Rules that never meet — the two
+        // gestures' vaults, or two rules limited to different gestures — can
+        // each have their own "task".
+        val mode = settings.vaultMode
         val clash = rulesDao.allForValidation()
-            .filter { it.id != rule.id && inSameEvaluation(rule.group, it.groupId) }
+            .filter { it.id != rule.id && mode.overlap(rule, it.toDomain()) }
             .flatMap { other -> other.keywords.split(',').map { it.trim() } }
             .firstOrNull { it.isNotBlank() && it in mine }
         if (clash != null) return@withContext SaveResult.DuplicateKeyword(clash)
@@ -436,6 +634,21 @@ class ConfigRepository(
         SaveResult.Saved
     }
 
+    /**
+     * Puts a rule where the mode says it belongs. In one vault a rule's type
+     * decides its group, so changing a note rule to a timer moves it to the
+     * common rules. With a vault per gesture, a vault's own rules answer
+     * whichever gesture the vault is for.
+     */
+    private fun normalise(rule: RoutingRule): RoutingRule {
+        val mode = settings.vaultMode
+        return when {
+            !mode.perGesture && rule.group != RuleGroup.CARRIED_OVER -> rule.copy(group = mode.groupFor(rule.action))
+            rule.group.hasVault -> rule.copy(gesture = null)
+            else -> rule
+        }
+    }
+
     /** Saves several rules of one group at once — a drag-reorder — with one write-through. */
     suspend fun upsertAll(rules: List<RoutingRule>) = withContext(Dispatchers.IO) {
         if (rules.isEmpty()) return@withContext
@@ -449,11 +662,6 @@ class ConfigRepository(
         invalidateRules()
         rulesDao.delete(id)
         group?.let { writeThroughFor(it) }
-    }
-
-    private fun inSameEvaluation(group: RuleGroup, otherWire: String): Boolean {
-        val other = RuleGroup.fromWire(otherWire) ?: return true
-        return group == RuleGroup.COMMON || other == RuleGroup.COMMON || other == group
     }
 
     private fun toEntities(blocks: List<RuleBlock>, group: RuleGroup): List<RoutingRuleEntity> =
@@ -487,6 +695,9 @@ class ConfigRepository(
                 includeInMoc = block.includeInMoc,
                 stripKeyword = block.stripKeyword,
                 groupId = group.wireName,
+                // With a vault per gesture, the vault decides; a stray
+                // gesture on one of its rules would only stop it firing.
+                gesture = block.gestureGroup()?.takeIf { group == RuleGroup.COMMON || !settings.vaultMode.perGesture }?.wireName,
             )
         }
 
@@ -509,6 +720,7 @@ class ConfigRepository(
                     r.enabled.toString(),
                     r.includeInMoc.toString(),
                     r.stripKeyword.toString(),
+                    r.gestureGroup()?.wireName.orEmpty(),
                 ).joinToString("|")
             }.sorted()
             return norm(a) == norm(b)
@@ -530,6 +742,7 @@ fun RoutingRuleEntity.toDomain() = RoutingRule(
     includeInMoc = includeInMoc,
     stripKeyword = stripKeyword,
     group = RuleGroup.fromWire(groupId) ?: RuleGroup.COMMON,
+    gesture = RuleGroup.fromWire(gesture)?.takeIf { it.isTrigger },
 )
 
 fun RoutingRuleEntity.toBlock() = RuleBlock(
@@ -542,6 +755,7 @@ fun RoutingRuleEntity.toBlock() = RuleBlock(
     enabled = enabled,
     includeInMoc = includeInMoc,
     stripKeyword = stripKeyword,
+    gesture = RuleGroup.fromWire(gesture)?.takeIf { it.isTrigger }?.wireName ?: RuleBlock.GESTURE_ANY,
 )
 
 fun RoutingRule.toEntity() = RoutingRuleEntity(
@@ -556,4 +770,5 @@ fun RoutingRule.toEntity() = RoutingRuleEntity(
     includeInMoc = includeInMoc,
     stripKeyword = stripKeyword,
     groupId = group.wireName,
+    gesture = gesture?.wireName,
 )

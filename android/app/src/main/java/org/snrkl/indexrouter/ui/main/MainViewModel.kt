@@ -31,6 +31,10 @@ internal data class MainUiState(
     val receiverRunning: Boolean = false,
     val serverPort: Int = 0,
     val vaults: List<VaultStatus> = emptyList(),
+    /** Both gestures, for the Pebble setup steps, whatever the vaults. */
+    val gestures: List<VaultStatus> = emptyList(),
+    /** One vault for both gestures (false), or a vault per gesture. */
+    val perGesture: Boolean = false,
     val hasSecret: Boolean = false,
     val ruleCount: Int = 0,
     val canLaunchFromBackground: Boolean = true,
@@ -91,6 +95,7 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
             // writes and deletes a file, which measured at ~450ms. A fresh probe
             // runs below and updates the state only if the answer moved.
             val vaults = timing.stage("requirements") {
+                val mode = settings.vaultMode
                 settings.vaultProfiles.map { profile ->
                     val store = container.vaultStore(profile.group)
                     val blocked = container.vaultAccess(profile.group).peek(
@@ -99,7 +104,8 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
                     )?.count { !it.satisfied }
                     VaultStatus(
                         group = profile.group,
-                        name = settings.groupName(profile.group),
+                        // In one vault the vault is not a gesture's.
+                        name = if (mode.perGesture) settings.groupName(profile.group) else app.getString(R.string.status_vault_shared),
                         assigned = profile.isAssigned,
                         description = store?.takeIf { profile.isAssigned && it.isReady }?.describe(),
                         baseDir = profile.baseDir,
@@ -115,10 +121,20 @@ internal class MainViewModel(private val app: Application) : ViewModel() {
                 }
             }
 
+            val gestures = RuleGroup.TRIGGERS.map { g ->
+                VaultStatus(
+                    group = g,
+                    name = settings.groupName(g),
+                    assigned = settings.vaultFor(g).isAssigned,
+                    lastHeardAt = runCatching { container.database.log().lastReceivedFor(g.wireName) }.getOrNull(),
+                )
+            }
             _state.value = MainUiState(
                 receiverRunning = running,
                 serverPort = settings.serverPort,
                 vaults = vaults,
+                gestures = gestures,
+                perGesture = settings.vaultMode.perGesture,
                 hasSecret = container.secrets.hasSecret(),
                 ruleCount = rules.size,
                 canLaunchFromBackground = ActivityLauncher.canLaunchFromBackground(app),

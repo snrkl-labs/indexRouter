@@ -35,8 +35,12 @@ class IndexRouterApp : Application() {
 
         val settings: SettingsStore by lazy {
             // An install from before there were two vaults: its one vault is
-            // carried over as a profile of its own, assigned to no gesture.
-            SettingsStore(app).also { it.migrateLegacyVault() }
+            // carried over as a profile of its own, then the mode is chosen
+            // from what the install already had.
+            SettingsStore(app).also {
+                it.migrateLegacyVault()
+                it.settleVaultMode()
+            }
         }
         val secrets: SecretStore by lazy { SecretStore(app) }
         val vault: VaultRepository by lazy { VaultRepository(app) }

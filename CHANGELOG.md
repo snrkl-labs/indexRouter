@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.21.0 — 2026-11-13
+
+### Added
+- **One vault, or a vault per gesture.** One vault is now the default: both
+  gestures file into it, with one list of rules and one inbox. **A vault per
+  gesture** is a switch, the first item in Settings. Turning it either way
+  walks through the change before anything happens: which vault is kept,
+  where each rule goes, and, when turning it on, whether to choose the second
+  vault now or later. Nothing in either vault is deleted. A vault left behind
+  keeps its own config file, so choosing it again brings its rules back.
+- **A rule can be limited to one gesture.** Every rule has a gesture: either,
+  click-hold or double-click-hold. In one vault the same keyword can file
+  differently per gesture. With a vault per gesture, the common timer,
+  calendar and dictation rules can be limited the same way. A limited rule
+  shows its gesture on its card, and run order leaves it out for the other
+  gesture.
+
+### Changed
+- **Triggers is now Vaults & gestures**, and says which mode the app is in,
+  with a link to the switch. In one vault it shows the one vault, then the
+  gestures' names and colours.
+- **The rules screen in one vault** is a single list in run order, with no
+  groups. A rule's type decides where it is kept, so a note rule can become a
+  timer and back.
+- **The main screen and Pebble setup in one vault** show one vault "for both
+  gestures", and the setup steps for whichever gestures you use, with no
+  warnings for one you do not.
+- **The config file format is 00.06.00.** Each rule carries `gesture`; a file
+  without it reads as `any`, so older files load unchanged.
+- **Upgrading:** an install with a vault for both gestures keeps a vault per
+  gesture, and nothing changes. An install with one vault, or with the vault
+  from before there were two, becomes one vault. Rules left for the gesture
+  with no vault join it, limited to that gesture.
+- **The detailed content logging setting** now says everything it covers:
+  notifications, note file names, and dictation text in the routing log.
+
+### Fixed
+- **Vaults & gestures no longer flashes "No vault set"** while it loads.
+
 ## v0.20.1 — 2026-11-09
 
 ### Changed

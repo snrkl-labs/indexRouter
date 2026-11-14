@@ -52,7 +52,7 @@ class ConfigVersionTest {
         val document = ConfigCodec.decode(v2)
         assertEquals(listOf("blogidea"), document.routing[0].allKeywords())
         // It is re-stamped as current, so writing it back does not leave a v2 file.
-        assertEquals("00.05.00", document.version)
+        assertEquals("00.06.00", document.version)
     }
 
     @Test
@@ -74,7 +74,7 @@ class ConfigVersionTest {
         val document = ConfigCodec.decode(v3)
         assertEquals(listOf("blog idea", "content idea"), document.routing[0].allKeywords())
         assertEquals("_Tasks", document.layout.taskDir)
-        assertEquals("00.05.00", document.version)
+        assertEquals("00.06.00", document.version)
     }
 
     @Test
@@ -85,7 +85,7 @@ class ConfigVersionTest {
         )
         val reparsed = ConfigCodec.decode(ConfigCodec.encode(document))
         assertEquals(document.copy(common = emptyList()), reparsed)
-        assertEquals("00.05.00", reparsed.version)
+        assertEquals("00.06.00", reparsed.version)
     }
 
     @Test
@@ -93,7 +93,7 @@ class ConfigVersionTest {
         // Quoted: bare 00.04.00 is not a YAML number, and leading zeroes in an
         // unquoted scalar are the sort of thing a parser is entitled to have
         // opinions about.
-        assertTrue(ConfigCodec.encode(ConfigDocument()).contains("version: \"00.05.00\""))
+        assertTrue(ConfigCodec.encode(ConfigDocument()).contains("version: \"00.06.00\""))
     }
 
     @Test

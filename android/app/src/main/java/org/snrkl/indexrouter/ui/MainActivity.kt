@@ -318,6 +318,15 @@ class MainActivity : ComponentActivity() {
                         pickBaseFolder.launch(startAt(pickingGroup, insideBase = false))
                     },
                     onOpenFileAccess = { fileAccessRequested = true },
+                    // Usually reached from Settings: go back to it rather than
+                    // stacking a second copy.
+                    onOpenSettings = {
+                        if (navController.previousBackStackEntry?.destination?.route == Destinations.SETTINGS) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(Destinations.SETTINGS)
+                        }
+                    },
                     hasAllFilesAccess = ::hasAllFilesAccess,
                 )
             }

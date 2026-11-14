@@ -196,7 +196,8 @@ internal fun MainScreen(
         PebbleSetupDialog(
             url = url,
             secret = secret,
-            gestures = state.vaults,
+            gestures = state.gestures,
+            perGesture = state.perGesture,
             groupColors = groupColors,
             onCopy = onCopy,
             onRegenerate = {
@@ -239,7 +240,9 @@ private fun StatusCard(
                 ok = state.hasSecret,
             )
             StatusLine(stringResource(R.string.status_rules, state.ruleCount), ok = true)
-            state.vaults.forEach { vault -> VaultStatusLines(vault, groupColors[vault.group], onSync) }
+            state.vaults.forEach { vault ->
+                VaultStatusLines(vault, groupColors[vault.group].takeIf { state.perGesture }, onSync)
+            }
             StatusLine(
                 text = if (state.canLaunchFromBackground) {
                     stringResource(R.string.status_background_launch_ok)
@@ -408,6 +411,7 @@ private fun PebbleSetupDialog(
     url: String,
     secret: String,
     gestures: List<VaultStatus>,
+    perGesture: Boolean,
     groupColors: Map<RuleGroup, GroupColor>,
     onCopy: (String, String) -> Unit,
     onRegenerate: () -> Unit,
@@ -423,7 +427,10 @@ private fun PebbleSetupDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(stringResource(R.string.setup_hint), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    stringResource(if (perGesture) R.string.setup_hint else R.string.setup_hint_one),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 CopyableValue(stringResource(R.string.setup_url_label), url) {
                     onCopy(url, "url")
                 }
@@ -432,7 +439,10 @@ private fun PebbleSetupDialog(
                 }
                 // One block per gesture, in its colour: each needs its own
                 // webhook entry, and the second is the one that gets forgotten.
-                gestures.forEach { gesture -> GestureSteps(gesture, groupColors[gesture.group]) }
+                // In one vault both are optional: no warning for a gesture
+                // that is not set up, or for the vault, which the main
+                // screen already reports.
+                gestures.forEach { gesture -> GestureSteps(gesture, groupColors[gesture.group], warnNoVault = perGesture) }
             }
         },
         confirmButton = {
@@ -467,7 +477,7 @@ private fun PebbleSetupDialog(
 
 /** What the Pebble app needs for one gesture, and whether it has been heard from. */
 @Composable
-private fun GestureSteps(gesture: VaultStatus, color: GroupColor?) {
+private fun GestureSteps(gesture: VaultStatus, color: GroupColor?, warnNoVault: Boolean) {
     val onContainer = color?.onContainer ?: MaterialTheme.colorScheme.onSecondaryContainer
     Row(
         modifier = Modifier
@@ -513,7 +523,7 @@ private fun GestureSteps(gesture: VaultStatus, color: GroupColor?) {
                 fontWeight = FontWeight.Bold,
                 color = onContainer,
             )
-            if (!gesture.assigned) {
+            if (warnNoVault && !gesture.assigned) {
                 Text(
                     stringResource(R.string.setup_gesture_no_vault),
                     style = MaterialTheme.typography.bodySmall,

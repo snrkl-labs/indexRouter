@@ -27,6 +27,16 @@ import org.snrkl.indexrouter.vault.VaultAccess
 import org.snrkl.indexrouter.voice.VoiceImeStatus
 
 internal data class SettingsUiState(
+    /** False until the first refresh: nothing is reported missing before it has been looked for. */
+    val loaded: Boolean = false,
+    /** Off: one vault for both gestures. On: a vault per gesture. */
+    val perGesture: Boolean = false,
+    /** In one-vault mode, the gesture whose profile holds the vault. */
+    val home: RuleGroup = RuleGroup.SINGLE_CLICK_HOLD,
+    /** Each gesture's vault folder name, or null when it has none. */
+    val vaultNames: Map<RuleGroup, String?> = emptyMap(),
+    /** Every rule, for the switch's preview of where they go. */
+    val rules: List<org.snrkl.indexrouter.routing.RoutingRule> = emptyList(),
     /** The gesture whose vault the vault and layout cards are editing. */
     val group: RuleGroup = RuleGroup.DOUBLE_CLICK_HOLD,
     val groupNames: Map<RuleGroup, String> = emptyMap(),
@@ -76,8 +86,13 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
             ?: RuleGroup.DOUBLE_CLICK_HOLD,
     )
 
-    /** The selected gesture's vault. Every vault setting on this screen means this one. */
-    private val vault get() = settings.profile(_group.value)
+    /**
+     * The selected gesture's vault. Every vault setting on this screen means
+     * this one. In one-vault mode there is only the one.
+     */
+    private val vault get() = settings.vaultMode.let { mode ->
+        settings.profile(if (mode.perGesture) _group.value else mode.home)
+    }
 
     /** A group's display name. Blank restores the default. */
     fun setGroupName(group: RuleGroup, name: String) {
@@ -106,7 +121,10 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
         }
     }
 
-    private val _state = MutableStateFlow(SettingsUiState())
+    // Starts in the right mode, so the screen does not draw the other layout first.
+    private val _state = MutableStateFlow(
+        settings.vaultMode.let { SettingsUiState(perGesture = it.perGesture, home = it.home) },
+    )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     private val _messages = MutableStateFlow<String?>(null)
@@ -138,7 +156,16 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
             val rules = timing.stage("rules") { container.config.rules() }
             val vault = vault
             val cache = container.vaultAccess(vault.group)
+            val mode = settings.vaultMode
             _state.value = SettingsUiState(
+                loaded = true,
+                perGesture = mode.perGesture,
+                home = mode.home,
+                vaultNames = RuleGroup.TRIGGERS.associateWith { g ->
+                    settings.profile(g).takeIf { it.isAssigned && (mode.perGesture || g == mode.home) }
+                        ?.let { p -> p.vaultRootPath?.trimEnd('/')?.substringAfterLast('/') ?: app.getString(R.string.settings_vault_saf) }
+                },
+                rules = rules,
                 group = vault.group,
                 groupNames = RuleGroup.entries.associateWith { settings.groupName(it) },
                 groupSeeds = settings.groupSeeds(),
@@ -196,6 +223,38 @@ internal class SettingsViewModel(private val app: Application) : ViewModel() {
                 },
             )
             timing.finish()
+        }
+    }
+
+    // ---- one vault, or a vault per gesture ------------------------------------
+
+    /**
+     * One vault → a vault per gesture, once the guided flow is confirmed.
+     * [then] runs afterwards, with the gesture that still needs a vault.
+     */
+    fun switchToPerGesture(keptBy: RuleGroup, copyEitherToBoth: Boolean, then: (RuleGroup) -> Unit) {
+        viewModelScope.launch {
+            container.config.switchToPerGesture(keptBy, copyEitherToBoth)
+            RuleGroup.TRIGGERS.forEach { container.vaultAccess(it).invalidate() }
+            _group.value = keptBy.other!!
+            _messages.value = app.getString(R.string.vault_mode_on_done, settings.groupName(keptBy.other!!))
+            refresh(_state.value.hasAllFilesAccess)
+            then(keptBy.other!!)
+        }
+    }
+
+    /** A vault per gesture → one vault, once the guided flow is confirmed. */
+    fun switchToOneVault(keep: RuleGroup, bringAcross: Boolean) {
+        viewModelScope.launch {
+            val skipped = container.config.switchToOneVault(keep, bringAcross)
+            RuleGroup.TRIGGERS.forEach { container.vaultAccess(it).invalidate() }
+            _group.value = keep
+            _messages.value = if (skipped > 0) {
+                app.resources.getQuantityString(R.plurals.vault_mode_off_skipped, skipped, skipped)
+            } else {
+                app.getString(R.string.vault_mode_off_done)
+            }
+            refresh(_state.value.hasAllFilesAccess)
         }
     }
 

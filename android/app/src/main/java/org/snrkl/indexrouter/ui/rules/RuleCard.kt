@@ -64,6 +64,7 @@ import org.snrkl.indexrouter.R
 import org.snrkl.indexrouter.ui.common.OverflowChipRow
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.RoutingRule
+import org.snrkl.indexrouter.routing.RuleGroup
 import org.snrkl.indexrouter.routing.Tags
 
 /**
@@ -97,6 +98,13 @@ internal fun RuleCard(
     handle: @Composable () -> Unit = {},
     /** The group's colours; the card is tinted with them so its group is seen at a glance. */
     groupColor: org.snrkl.indexrouter.ui.theme.GroupColor? = null,
+    /** The types this rule may be changed to. */
+    allowedTypes: (ActionType) -> Boolean = { rule.group.allows(it) },
+    /**
+     * The gestures' names, when this rule can be limited to one. Null where
+     * the vault already decides, and the selector is not shown.
+     */
+    gestureNames: Map<RuleGroup, String>? = null,
 ) {
     SwipeToDelete(onDelete = onDelete) {
         Column(
@@ -132,7 +140,7 @@ internal fun RuleCard(
                 handle()
                 FieldLabel(stringResource(R.string.rule_label_action))
                 TypeDropdown(
-                    group = rule.group,
+                    allowed = allowedTypes,
                     selected = rule.action,
                     onPick = { onChange(rule.copy(action = it)) },
                     modifier = Modifier.padding(end = 12.dp),
@@ -175,6 +183,17 @@ internal fun RuleCard(
                             onPick = { onChange(rule.copy(folder = it)) },
                             onChoose = onChooseFolder,
                             modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                if (gestureNames != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FieldLabel(stringResource(R.string.rule_label_gesture))
+                        GestureDropdown(
+                            selected = rule.gesture,
+                            names = gestureNames,
+                            onPick = { onChange(rule.copy(gesture = it)) },
                         )
                     }
                 }
@@ -231,6 +250,21 @@ internal fun RuleCard(
                 // Collapsed: the chips and the toggle share one line, and the
                 // chips take whatever width the toggle leaves. Two lines total.
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Only when it is limited: "either gesture" is the usual
+                    // case and would add a chip to every card.
+                    val limitedTo = rule.gesture?.let { gestureNames?.get(it) }
+                    if (limitedTo != null) {
+                        Text(
+                            text = limitedTo,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .border(1.dp, groupColor?.accent ?: MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
                     CollapsedKeywords(
                         keywords = rule.keywords,
                         modifier = Modifier.weight(1f),
@@ -417,11 +451,39 @@ private fun FieldLabel(text: String) {
     )
 }
 
+/** Any gesture, or one of the two. */
+@Composable
+private fun GestureDropdown(
+    selected: RuleGroup?,
+    names: Map<RuleGroup, String>,
+    onPick: (RuleGroup?) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val any = stringResource(R.string.gesture_any)
+    Box {
+        PillBox(onClick = { open = true }) {
+            Text(selected?.let { names[it] ?: it.defaultName } ?: any, style = MaterialTheme.typography.bodyMedium)
+            Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            (listOf<RuleGroup?>(null) + RuleGroup.TRIGGERS).forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option?.let { names[it] ?: it.defaultName } ?: any) },
+                    onClick = {
+                        open = false
+                        onPick(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun TypeDropdown(
     selected: ActionType,
-    /** Only the types this group may hold are offered. */
-    group: org.snrkl.indexrouter.routing.RuleGroup,
+    /** Only the types this rule may become are offered. */
+    allowed: (ActionType) -> Boolean,
     onPick: (ActionType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -432,7 +494,7 @@ private fun TypeDropdown(
             Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            ActionType.entries.filter { group.allows(it) }.forEach { option ->
+            ActionType.entries.filter(allowed).forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option.displayName) },
                     onClick = {

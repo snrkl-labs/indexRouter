@@ -87,6 +87,8 @@ internal fun SettingsScreen(
     var pickingDateFiling by remember { mutableStateOf(false) }
     var pickingCalendarMode by remember { mutableStateOf(false) }
     var confirmingReset by remember { mutableStateOf(false) }
+    var turningOn by remember { mutableStateOf(false) }
+    var turningOff by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let {
@@ -102,7 +104,8 @@ internal fun SettingsScreen(
     OnResume { viewModel.refresh(hasAllFilesAccess()) }
 
     val groupColors = rememberGroupColors(state.groupSeeds)
-    val gestureColor = groupColors[state.group]
+    // In one vault the vault belongs to neither gesture, so it wears neither colour.
+    val gestureColor = if (state.perGesture) groupColors[state.group] else null
 
     val conflict by viewModel.commonConflict.collectAsStateWithLifecycle()
     conflict?.let {
@@ -134,14 +137,24 @@ internal fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Each gesture has its own vault, and the three cards below it —
-            // vault, folders, tasks — describe whichever one is selected here.
-            GestureSelector(
-                selected = state.group,
-                names = state.groupNames,
-                colors = groupColors,
-                onSelect = viewModel::selectGroup,
+            // First, because it decides what every vault setting below means.
+            VaultModeCard(
+                state = state,
+                onRequestOn = { turningOn = true },
+                onRequestOff = { turningOff = true },
+                onOpenVaults = { onOpenTriggers(state.group) },
             )
+
+            // With a vault per gesture, the three cards below it — vault,
+            // folders, tasks — describe whichever one is selected here.
+            if (state.perGesture) {
+                GestureSelector(
+                    selected = state.group,
+                    names = state.groupNames,
+                    colors = groupColors,
+                    onSelect = viewModel::selectGroup,
+                )
+            }
 
             // The vault itself — which folder, base folder, access — is set on
             // the Triggers screen, with the gesture's name and colour. Shown
@@ -388,6 +401,29 @@ internal fun SettingsScreen(
 
             Box(modifier = Modifier.padding(bottom = 32.dp))
         }
+    }
+
+    if (turningOn) {
+        TurnOnDialog(
+            state = state,
+            onDismiss = { turningOn = false },
+            onConfirm = { keptBy, copy, chooseNow ->
+                turningOn = false
+                viewModel.switchToPerGesture(keptBy, copy) { needing ->
+                    if (chooseNow) onOpenTriggers(needing)
+                }
+            },
+        )
+    }
+    if (turningOff) {
+        TurnOffDialog(
+            state = state,
+            onDismiss = { turningOff = false },
+            onConfirm = { keep, bring ->
+                turningOff = false
+                viewModel.switchToOneVault(keep, bring)
+            },
+        )
     }
 
     editing?.let { setting ->

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -88,6 +89,7 @@ internal fun RulesScreen(
     onChooseFolderFor: (group: RuleGroup, onPicked: (String) -> Unit) -> Unit,
 ) {
     val rules by viewModel.displayedRules.collectAsStateWithLifecycle()
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
     val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
     val headers by viewModel.headers.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
@@ -105,10 +107,12 @@ internal fun RulesScreen(
             rules = rules,
             names = RuleGroup.entries.associateWith { headers[it]?.name ?: it.defaultName },
             colors = groupColors,
+            mode = mode,
             onDismiss = { showRunOrder = false },
         )
     }
     var moreFor by remember { mutableStateOf<RoutingRule?>(null) }
+    val gestureNames = RuleGroup.TRIGGERS.associateWith { headers[it]?.name ?: it.defaultName }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -153,6 +157,114 @@ internal fun RulesScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        // One rule card, wherever it sits. [vault] is the group whose vault
+        // its folders resolve in.
+        @Composable
+        fun RuleItem(rule: RoutingRule, vault: RuleGroup, color: GroupColor?, gestures: Map<RuleGroup, String>?) {
+            val dragging = reorder.draggingKey == rule.id
+            Box(
+                modifier = Modifier
+                    .zIndex(if (dragging) 1f else 0f)
+                    .offset { IntOffset(0, reorder.offsetFor(rule.id).toInt()) },
+            ) {
+                RuleCard(
+                    rule = rule,
+                    expanded = expandedId == rule.id,
+                    folderOptions = folderOptions[vault].orEmpty(),
+                    resolvedFolder = { viewModel.resolvedFolder(vault, it) },
+                    fixedFolderFor = { viewModel.fixedFolderFor(vault, it) },
+                    inheritedTags = if (vault.isTrigger) {
+                        viewModel.profile(vault).taskTags.joinToString(", ")
+                    } else {
+                        ""
+                    },
+                    onExpandToggle = {
+                        expandedId = if (expandedId == rule.id) null else rule.id
+                    },
+                    onChange = viewModel::saveInline,
+                    onDelete = { viewModel.delete(rule.id) },
+                    onChooseFolder = {
+                        onChooseFolderFor(vault) { segment ->
+                            viewModel.saveInline(rule.copy(folder = segment))
+                        }
+                    },
+                    onMore = { moreFor = rule },
+                    groupColor = color,
+                    // In one vault any type can follow any other: the type
+                    // decides the group. With a vault per gesture, a rule
+                    // stays the kind its group holds.
+                    allowedTypes = if (mode.perGesture) ({ rule.group.allows(it) }) else ({ true }),
+                    gestureNames = gestures,
+                    handle = {
+                        Icon(
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = stringResource(R.string.rule_reorder_handle),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .size(24.dp)
+                                .reorderHandle(reorder, rule.id),
+                        )
+                    },
+                )
+            }
+        }
+
+        // The default route and the recordings folder of one vault.
+        fun LazyListScope.fixedCards(group: RuleGroup) {
+            val profile = viewModel.profile(group)
+            val folders = folderOptions[group].orEmpty()
+            item(key = "default-${group.wireName}") {
+                // Distinct on purpose: these two are not rules. The default
+                // is what happens when nothing matched, and recordings
+                // happen whatever matched, so neither has a keyword, a
+                // priority or a place in the order.
+                FixedCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BoldLabel(stringResource(R.string.rule_label_action))
+                        StaticPill(stringResource(R.string.rule_default_title))
+                        Box(modifier = Modifier.weight(1f))
+                        BoldLabel(stringResource(R.string.rule_label_priority))
+                        StaticPill(stringResource(R.string.rule_default_title))
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        BoldLabel(stringResource(R.string.rule_label_folder))
+                        ReservedFolderDropdown(
+                            current = profile.fallbackDirName,
+                            options = folders,
+                            resolved = { viewModel.resolvedFolder(group, it) },
+                            onPick = { viewModel.saveDefaultRoute(group, it) },
+                            onChoose = { onChooseFolderFor(group) { viewModel.saveDefaultRoute(group, it) } },
+                        )
+                    }
+                }
+            }
+
+            item(key = "audio-${group.wireName}") {
+                FixedCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BoldLabel(stringResource(R.string.rule_recordings_label))
+                        ReservedFolderDropdown(
+                            current = profile.audioDirName,
+                            options = folders,
+                            resolved = { viewModel.resolvedFolder(group, it) },
+                            onPick = { viewModel.saveAudioFolder(group, it) },
+                            onChoose = { onChooseFolderFor(group) { viewModel.saveAudioFolder(group, it) } },
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.rule_always_subtitle, profile.audioPath()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -161,12 +273,35 @@ internal fun RulesScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // One list, in the order it is evaluated: the common group, then
-            // each gesture's own rules, its default route and its recordings.
+            if (!mode.perGesture) {
+                // One vault: one list, in the order it runs, with no groups.
+                // A rule limited to a gesture wears that gesture's colour.
+                val home = mode.home
+                val inUse = rules.filter { mode.inUse(it) }
+                item(key = "one-vault-header") {
+                    OneVaultHeader(
+                        vault = headers[home]?.vault,
+                        onAdd = { viewModel.addRule(home) { expandedId = it } },
+                    )
+                }
+                items(inUse, key = { it.id }) { rule ->
+                    RuleItem(
+                        rule = rule,
+                        vault = home,
+                        color = rule.gesture?.let { groupColors[it] },
+                        gestures = gestureNames,
+                    )
+                }
+                fixedCards(home)
+                item { Box(modifier = Modifier.size(24.dp)) }
+                return@LazyColumn
+            }
+
+            // A vault per gesture: the common group, then each gesture's own
+            // rules, its default route and its recordings.
             RuleGroup.entries.forEach { group ->
                 val isCollapsed = group.wireName in collapsed
                 val inGroup = rules.filter { it.group == group }
-                val folders = folderOptions[group].orEmpty()
                 // The carried-over vault appears only while it has rules waiting.
                 if (group == RuleGroup.CARRIED_OVER && inGroup.isEmpty()) return@forEach
                 item(key = "header-${group.wireName}") {
@@ -189,102 +324,17 @@ internal fun RulesScreen(
                 if (isCollapsed) return@forEach
 
                 items(inGroup, key = { it.id }) { rule ->
-                    val dragging = reorder.draggingKey == rule.id
-                    Box(
-                        modifier = Modifier
-                            .zIndex(if (dragging) 1f else 0f)
-                            .offset { IntOffset(0, reorder.offsetFor(rule.id).toInt()) },
-                    ) {
-                        RuleCard(
-                            rule = rule,
-                            expanded = expandedId == rule.id,
-                            folderOptions = folders,
-                            resolvedFolder = { viewModel.resolvedFolder(group, it) },
-                            fixedFolderFor = { viewModel.fixedFolderFor(group, it) },
-                            inheritedTags = if (group.isTrigger) {
-                                viewModel.profile(group).taskTags.joinToString(", ")
-                            } else {
-                                ""
-                            },
-                            onExpandToggle = {
-                                expandedId = if (expandedId == rule.id) null else rule.id
-                            },
-                            onChange = viewModel::saveInline,
-                            onDelete = { viewModel.delete(rule.id) },
-                            onChooseFolder = {
-                                onChooseFolderFor(group) { segment ->
-                                    viewModel.saveInline(rule.copy(folder = segment))
-                                }
-                            },
-                            onMore = { moreFor = rule },
-                            groupColor = groupColors[group],
-                            handle = {
-                                Icon(
-                                    imageVector = Icons.Filled.Menu,
-                                    contentDescription = stringResource(R.string.rule_reorder_handle),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier
-                                        .padding(end = 8.dp)
-                                        .size(24.dp)
-                                        .reorderHandle(reorder, rule.id),
-                                )
-                            },
-                        )
-                    }
+                    RuleItem(
+                        rule = rule,
+                        vault = group,
+                        color = groupColors[group],
+                        // Only the common rules choose a gesture; a vault's
+                        // own rules answer the gesture the vault is for.
+                        gestures = if (group == RuleGroup.COMMON) gestureNames else null,
+                    )
                 }
 
-                if (!group.isTrigger) return@forEach
-                val profile = viewModel.profile(group)
-
-                item(key = "default-${group.wireName}") {
-                    // Distinct on purpose: these two are not rules. The default
-                    // is what happens when nothing matched, and recordings
-                    // happen whatever matched, so neither has a keyword, a
-                    // priority or a place in the order.
-                    FixedCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            BoldLabel(stringResource(R.string.rule_label_action))
-                            StaticPill(stringResource(R.string.rule_default_title))
-                            Box(modifier = Modifier.weight(1f))
-                            BoldLabel(stringResource(R.string.rule_label_priority))
-                            StaticPill(stringResource(R.string.rule_default_title))
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 8.dp),
-                        ) {
-                            BoldLabel(stringResource(R.string.rule_label_folder))
-                            ReservedFolderDropdown(
-                                current = profile.fallbackDirName,
-                                options = folders,
-                                resolved = { viewModel.resolvedFolder(group, it) },
-                                onPick = { viewModel.saveDefaultRoute(group, it) },
-                                onChoose = { onChooseFolderFor(group) { viewModel.saveDefaultRoute(group, it) } },
-                            )
-                        }
-                    }
-                }
-
-                item(key = "audio-${group.wireName}") {
-                    FixedCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            BoldLabel(stringResource(R.string.rule_recordings_label))
-                            ReservedFolderDropdown(
-                                current = profile.audioDirName,
-                                options = folders,
-                                resolved = { viewModel.resolvedFolder(group, it) },
-                                onPick = { viewModel.saveAudioFolder(group, it) },
-                                onChoose = { onChooseFolderFor(group) { viewModel.saveAudioFolder(group, it) } },
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.rule_always_subtitle, profile.audioPath()),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-                }
+                if (group.isTrigger) fixedCards(group)
             }
 
             item { Box(modifier = Modifier.size(24.dp)) }
@@ -508,6 +558,35 @@ private fun ReservedFolderDropdown(
                     onChoose()
                 },
             )
+        }
+    }
+}
+
+/** The one-vault list's heading: where everything files, and the one add action. */
+@Composable
+private fun OneVaultHeader(vault: String?, onAdd: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.rules_one_vault_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = if (vault != null) {
+                    stringResource(R.string.rules_one_vault_sub, vault)
+                } else {
+                    stringResource(R.string.group_no_vault_sub)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (vault == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        FilledTonalIconButton(onClick = onAdd) {
+            Icon(Icons.Filled.Add, stringResource(R.string.rules_add))
         }
     }
 }

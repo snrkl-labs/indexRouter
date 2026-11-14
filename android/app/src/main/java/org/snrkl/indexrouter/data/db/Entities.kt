@@ -48,6 +48,8 @@ data class RoutingRuleEntity(
     @ColumnInfo(defaultValue = "1") val stripKeyword: Boolean = true,
     /** `common`, or the gesture whose vault this rule writes into. See RuleGroup. */
     @ColumnInfo(defaultValue = "common") val groupId: String = "common",
+    /** The one gesture this rule answers, by wire name; null for either. */
+    val gesture: String? = null,
     val updatedAt: Long = System.currentTimeMillis(),
 )
 

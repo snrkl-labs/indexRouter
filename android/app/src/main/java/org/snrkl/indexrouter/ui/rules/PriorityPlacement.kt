@@ -32,8 +32,8 @@ internal object PriorityPlacement {
      */
     fun renumberAll(all: List<RoutingRule>, moved: RoutingRule, above: Int?, below: Int?): List<RoutingRule> {
         val others = all.filter { it.id != moved.id }.sortedWith(compareBy({ it.priority }, { it.id }))
-        val anchorAbove = above?.let { p -> others.lastOrNull { it.priority == p && it.group == moved.group } }
-        val anchorBelow = below?.let { p -> others.firstOrNull { it.priority == p && it.group == moved.group } }
+        val anchorAbove = above?.let { p -> others.lastOrNull { it.priority == p && it.group == moved.group } ?: others.lastOrNull { it.priority == p } }
+        val anchorBelow = below?.let { p -> others.firstOrNull { it.priority == p && it.group == moved.group } ?: others.firstOrNull { it.priority == p } }
         val index = when {
             anchorAbove != null -> others.indexOf(anchorAbove) + 1
             anchorBelow != null -> others.indexOf(anchorBelow)

@@ -140,14 +140,19 @@ class RoutingPipeline(
     ): Int {
         val recordedAt = NoteContent.toLocalDateTime(payload.recordedAtMillis) ?: LocalDateTime.now()
         val timing = Timing.Run("webhook")
-        val profile = settings.profile(group)
-        val store = if (profile.isAssigned) vaultStore(group) else null
+        // In one vault both gestures file into it; with a vault per gesture,
+        // each into its own. The gesture is still what the rules are matched
+        // against and what notifications name.
+        val mode = settings.vaultMode
+        val vaultGroup = mode.vaultFor(group)
+        val profile = settings.profile(vaultGroup)
+        val store = if (profile.isAssigned) vaultStore(vaultGroup) else null
         val alreadyNotified = attempt.previous?.notified == true
         val lastAttempt = attempt.attempt >= DeliveryLedger.MAX_ATTEMPTS
 
         val decision = timing.stage("classify") {
             config.ensureInitialised()
-            RoutingClassifier(config.rules()).classify(payload.transcript, group)
+            RoutingClassifier(config.rules(), mode).classify(payload.transcript, group)
         }
         debug.event(
             context.getString(R.string.debug_stage_classified),
@@ -284,7 +289,7 @@ class RoutingPipeline(
         announceRoute(payload, decision, result)
 
         timing.stage("sample") {
-            result.folderName?.let { runCatching { onFolderUsed(group, it) } }
+            result.folderName?.let { runCatching { onFolderUsed(vaultGroup, it) } }
         }
         // A vault that was written just now is reachable; if its common copy
         // fell behind while it was not, this is the moment to catch it up.
@@ -376,8 +381,8 @@ class RoutingPipeline(
             audioBytes = payload.audio?.bytes?.size ?: 0,
             keywordStripped = decision.rule?.stripKeyword ?: false,
             errorMessage = result.error,
-            ruleGroup = (decision.rule?.group ?: group).wireName,
-            vaultGroup = group.wireName,
+            ruleGroup = (decision.rule?.group ?: settings.vaultMode.vaultFor(group)).wireName,
+            vaultGroup = settings.vaultMode.vaultFor(group).wireName,
             deliveryId = payload.deliveryId,
         )
         val previousRow = attempt.previous?.logRowId?.let { logDao.byId(it) }

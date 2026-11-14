@@ -10,21 +10,24 @@ package org.snrkl.indexrouter.routing
  *
  * No Android types: covered by JVM unit tests.
  */
-class RoutingClassifier(private val rules: List<RoutingRule>) {
+class RoutingClassifier(
+    private val rules: List<RoutingRule>,
+    private val mode: VaultMode = VaultMode(perGesture = true),
+) {
 
     /**
-     * @param trigger the gesture that started the recording. The chain is the
-     *   common rules plus that gesture's own rules, as **one list ordered by
-     *   priority then id** — a group says which gestures a rule applies to,
-     *   not where it sits in the order. First match wins; no match falls to
-     *   the gesture's default route. The other gesture's rules are never
-     *   evaluated. Null evaluates every rule, for a single-group rule set.
+     * @param trigger the gesture that started the recording. The chain is
+     *   every rule that gesture sees (see [VaultMode.sees]), as **one list
+     *   ordered by priority then id** — a group says which gestures a rule
+     *   applies to, not where it sits in the order. First match wins; no match
+     *   falls to the default route. Null evaluates every rule, for a
+     *   single-group rule set.
      */
     fun classify(transcript: String, trigger: RuleGroup? = null): RoutingDecision {
         val haystack = normalise(transcript)
         val words = haystack.split(' ').filter { it.isNotBlank() }
 
-        val ordered = chainFor(rules, trigger)
+        val ordered = chainFor(rules, trigger, mode)
 
         val hit = ordered
             .asSequence()
@@ -74,12 +77,16 @@ class RoutingClassifier(private val rules: List<RoutingRule>) {
 
 /**
  * The rules a recording from [trigger] is checked against, in the order they
- * are checked: the common rules and that gesture's own, by priority then id.
- * The other gesture's rules are never in it. Null means every rule.
+ * are checked, by priority then id. Which rules those are is [VaultMode.sees].
+ * Null means every rule.
  *
  * The one definition of the order, shared by routing and by the rules screen's
  * run-order view, so what is shown is what runs.
  */
-fun chainFor(rules: List<RoutingRule>, trigger: RuleGroup?): List<RoutingRule> = rules
-    .filter { trigger == null || it.group == RuleGroup.COMMON || (trigger.isTrigger && it.group == trigger) }
+fun chainFor(
+    rules: List<RoutingRule>,
+    trigger: RuleGroup?,
+    mode: VaultMode = VaultMode(perGesture = true),
+): List<RoutingRule> = rules
+    .filter { trigger == null || (trigger.isTrigger && mode.sees(trigger, it)) }
     .sortedWith(compareBy({ it.priority }, { it.id }))

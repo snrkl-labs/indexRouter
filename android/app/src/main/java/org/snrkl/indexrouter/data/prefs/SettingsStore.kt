@@ -11,6 +11,7 @@ import org.snrkl.indexrouter.data.config.VoiceBlock
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.CalendarMode
 import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.routing.VaultMode
 
 enum class StorageMode { FILES, SAF }
 
@@ -38,8 +39,59 @@ class SettingsStore(context: Context) {
     fun profile(group: RuleGroup): VaultProfile =
         profiles[group] ?: throw IllegalArgumentException("${group.wireName} has no vault")
 
-    /** Both gestures' vaults, in the order they are drawn. */
-    val vaultProfiles: List<VaultProfile> get() = RuleGroup.TRIGGERS.map { profile(it) }
+    /**
+     * The vaults in use, in the order they are drawn: one in one-vault mode,
+     * both gestures' with a vault per gesture. Everything that writes to
+     * "every vault" means these.
+     */
+    val vaultProfiles: List<VaultProfile> get() = vaultMode.vaultGroups.map { profile(it) }
+
+    /**
+     * One vault, or a vault per gesture. A device setting, like the vault
+     * path: no vault file says which mode the app is in.
+     */
+    var vaultMode: VaultMode
+        get() = VaultMode(
+            perGesture = prefs.getBoolean(KEY_PER_GESTURE, false),
+            home = RuleGroup.fromWire(prefs.getString(KEY_HOME_GESTURE, null))?.takeIf { it.isTrigger }
+                ?: RuleGroup.SINGLE_CLICK_HOLD,
+        )
+        set(value) = prefs.edit {
+            putBoolean(KEY_PER_GESTURE, value.perGesture)
+            putString(KEY_HOME_GESTURE, value.home.wireName)
+        }
+
+    /** The profile of the vault [gesture] files into. */
+    fun vaultFor(gesture: RuleGroup): VaultProfile = profile(vaultMode.vaultFor(gesture))
+
+    /**
+     * Chooses the mode once, for an install that predates the choice.
+     *
+     * Both gestures with a vault stay a vault per gesture: nothing changes.
+     * Otherwise it is one vault, held by whichever gesture had one, or by
+     * click-hold. A vault still waiting from before there were two is given
+     * to that gesture by the config repository, which also moves its rules.
+     */
+    fun settleVaultMode() {
+        if (prefs.getBoolean(KEY_MODE_SETTLED, false)) return
+        val assigned = RuleGroup.TRIGGERS.filter { profile(it).isAssigned }
+        vaultMode = when (assigned.size) {
+            2 -> VaultMode(perGesture = true)
+            1 -> VaultMode(perGesture = false, home = assigned.single())
+            else -> VaultMode(perGesture = false)
+        }
+        prefs.edit { putBoolean(KEY_MODE_SETTLED, true) }
+    }
+
+    /**
+     * Moves one gesture's vault, settings and all, to the other. Used when the
+     * vault per gesture is switched on and the existing vault is kept by the
+     * gesture that did not hold it.
+     */
+    fun moveVault(from: RuleGroup, to: RuleGroup) {
+        require(from.isTrigger && to.isTrigger && from != to)
+        prefs.moveProfile(from, to)
+    }
 
     /** The carried-over vault, waiting to be given to a gesture. Null once it has been, or if there was none. */
     val carriedOver: VaultProfile?
@@ -235,6 +287,9 @@ class SettingsStore(context: Context) {
 
     private companion object {
         const val KEY_PROFILES_MIGRATED = "vault_profiles_migrated"
+        const val KEY_PER_GESTURE = "vault_per_gesture"
+        const val KEY_HOME_GESTURE = "vault_home_gesture"
+        const val KEY_MODE_SETTLED = "vault_mode_settled"
         const val KEY_DEVICE_IMPORTED = "device_settings_imported"
         const val KEY_GROUP_NAME = "group_name."
         const val KEY_GROUP_SEED = "group_seed."

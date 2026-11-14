@@ -20,6 +20,7 @@ import org.snrkl.indexrouter.data.config.toDomain
 import org.snrkl.indexrouter.routing.ActionType
 import org.snrkl.indexrouter.routing.RoutingRule
 import org.snrkl.indexrouter.routing.RuleGroup
+import org.snrkl.indexrouter.routing.VaultMode
 
 /** A group's header: its display name, and for a gesture the vault it writes to. */
 internal data class GroupHeader(val name: String, val vault: String?, val seed: Int)
@@ -44,6 +45,16 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** One vault or a vault per gesture. Re-read whenever the screen resumes. */
+    private val _mode = MutableStateFlow(settings.vaultMode)
+    val mode: StateFlow<VaultMode> = _mode.asStateFlow()
+
+    /**
+     * What a drag is ordered within. With a vault per gesture, each group
+     * keeps its own order; in one vault the whole list is one order.
+     */
+    private fun orderGroup(rule: RoutingRule): Any = if (_mode.value.perGesture) rule.group else Unit
+
     private val _messages = MutableStateFlow<String?>(null)
     val messages: StateFlow<String?> = _messages.asStateFlow()
 
@@ -62,6 +73,7 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
     val headers: StateFlow<Map<RuleGroup, GroupHeader>> = _headers.asStateFlow()
 
     fun refreshFolders() {
+        _mode.value = settings.vaultMode
         viewModelScope.launch {
             val options = withContext(Dispatchers.IO) {
                 RuleGroup.TRIGGERS.associateWith { group ->
@@ -139,7 +151,10 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
      * A new, empty rule in [group], expanded so there is somewhere to type its
      * keywords. Its type is the first one the group allows.
      */
-    fun addRule(group: RuleGroup, onCreated: (Long) -> Unit) {
+    fun addRule(requested: RuleGroup, onCreated: (Long) -> Unit) {
+        // In one vault there are no groups to add to: a new rule starts as a
+        // note in the vault, and its type decides its group from then on.
+        val group = if (_mode.value.perGesture) requested else _mode.value.home
         viewModelScope.launch {
             // Priority is one number space shared by every group, so a new rule
             // goes after everything rather than after its own group's last.
@@ -178,15 +193,15 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         val current = _dragOrder.value ?: rules.value
         val from = current.indexOfFirst { it.id == fromKey }
         val to = current.indexOfFirst { it.id == toKey }
-        if (from < 0 || to < 0 || current[from].group != current[to].group) return
+        if (from < 0 || to < 0 || orderGroup(current[from]) != orderGroup(current[to])) return
         _dragOrder.value = current.toMutableList().apply { add(to, removeAt(from)) }
     }
 
     /** Drags stay inside a group: priorities are numbered per group. */
     fun sameGroup(a: Any, b: Any): Boolean {
         val current = _dragOrder.value ?: rules.value
-        val ga = current.firstOrNull { it.id == a }?.group ?: return false
-        return current.firstOrNull { it.id == b }?.group == ga
+        val ga = current.firstOrNull { it.id == a }?.let(::orderGroup) ?: return false
+        return current.firstOrNull { it.id == b }?.let(::orderGroup) == ga
     }
 
     /**
@@ -208,12 +223,12 @@ internal class RulesViewModel(private val app: Application) : ViewModel() {
         val before = rules.value
         viewModelScope.launch {
             val moved = ordered.firstOrNull { rule ->
-                val group = ordered.filter { it.group == rule.group }
-                val was = before.filter { it.group == rule.group }
+                val group = ordered.filter { orderGroup(it) == orderGroup(rule) }
+                val was = before.filter { orderGroup(it) == orderGroup(rule) }
                 group.indexOf(rule) != was.indexOfFirst { it.id == rule.id }
             }
             if (moved != null) {
-                val group = ordered.filter { it.group == moved.group }
+                val group = ordered.filter { orderGroup(it) == orderGroup(moved) }
                 val at = group.indexOfFirst { it.id == moved.id }
                 val above = group.getOrNull(at - 1)?.priority
                 val below = group.getOrNull(at + 1)?.priority

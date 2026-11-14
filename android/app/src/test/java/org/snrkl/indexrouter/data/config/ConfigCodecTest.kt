@@ -111,7 +111,7 @@ class ConfigCodecTest {
     fun `an older config is converted to the per-vault layout when written back`() {
         val moved = ConfigCodec.encode(ConfigCodec.decode(legacyFrontmatter))
         assertTrue(moved.contains("```yaml"))
-        assertTrue(moved.contains("version: \"00.05.00\""))
+        assertTrue(moved.contains("version: \"00.06.00\""))
         val frontmatter = moved.substringAfter("---\n").substringBefore("\n---")
         assertFalse(frontmatter.contains("base-dir"))
         // Device settings are no longer written to a vault file.
@@ -148,11 +148,41 @@ class ConfigCodecTest {
     }
 
     @Test
-    fun `a file never names a gesture or another vault`() {
+    fun `a file never names its gesture or another vault`() {
         val encoded = ConfigCodec.encode(ConfigCodec.decode(perVault))
-        assertFalse(encoded.contains("click-hold"))
+        // The rules block: rules for either gesture say so, and nothing says
+        // which gesture the vault belongs to.
+        val block = encoded.substringAfter("```yaml").substringBefore("```")
+        assertFalse(block.contains("click-hold"))
         assertFalse(encoded.contains("vault-root"))
         assertFalse(encoded.contains("trigger"))
+    }
+
+    @Test
+    fun `a rule's gesture survives the round trip`() {
+        val document = ConfigDocument(
+            routing = listOf(
+                RuleBlock(keywords = listOf("idea"), action = "file", gesture = "double-click-hold"),
+                RuleBlock(keywords = listOf("note"), action = "file"),
+            ),
+        )
+        val reparsed = ConfigCodec.decode(ConfigCodec.encode(document))
+        assertEquals(org.snrkl.indexrouter.routing.RuleGroup.DOUBLE_CLICK_HOLD, reparsed.routing[0].gestureGroup())
+        assertEquals(null, reparsed.routing[1].gestureGroup())
+        assertEquals("any", reparsed.routing[1].gesture)
+    }
+
+    @Test
+    fun `a 00_05_00 rule has no gesture and answers either`() {
+        val document = ConfigCodec.decode(perVault)
+        assertEquals("any", document.routing[0].gesture)
+        assertEquals(null, document.routing[0].gestureGroup())
+    }
+
+    @Test
+    fun `an unknown gesture reads as either rather than failing the file`() {
+        val document = ConfigCodec.decode(perVault.replace("    action: file", "    action: file\n    gesture: triple-tap"))
+        assertEquals(null, document.routing[0].gestureGroup())
     }
 
     @Test

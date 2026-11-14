@@ -87,6 +87,15 @@ class VaultProfile internal constructor(
         get() = prefs.getString(key(KEY_SYNC_ERROR), null)
         set(value) = prefs.edit { if (value == null) remove(key(KEY_SYNC_ERROR)) else putString(key(KEY_SYNC_ERROR), value) }
 
+    /**
+     * This gesture's group holds rules sent to it when a vault per gesture was
+     * switched on, before its vault was chosen. The first read of the vault's
+     * file keeps them beside its own, rather than replacing them.
+     */
+    var holdsPendingRules: Boolean
+        get() = prefs.getBoolean(key(KEY_PENDING_RULES), false)
+        set(value) = prefs.edit { putBoolean(key(KEY_PENDING_RULES), value) }
+
     // ---- layout --------------------------------------------------------------
 
     /** Vault-relative root for everything this gesture writes. May have several segments. */
@@ -216,6 +225,7 @@ class VaultProfile internal constructor(
         const val KEY_FALLBACK = "using_fallback"
         const val KEY_COMMON_STALE = "common_stale"
         const val KEY_SYNC_ERROR = "last_sync_error"
+        const val KEY_PENDING_RULES = "pending_rules"
         const val KEY_BASE_DIR = "base_dir"
         const val KEY_BASE_CONFIRMED = "base_dir_confirmed"
         const val KEY_TASK_DIR = "task_dir"
@@ -241,13 +251,14 @@ class VaultProfile internal constructor(
 }
 
 /**
- * Copies every setting of [from] to [to], then clears [from]. Used once, when
- * the carried-over vault is given to a gesture.
+ * Copies every setting of [from] to [to], then clears [from]. Used when the
+ * carried-over vault is given to a gesture, and when one gesture's vault is
+ * handed to the other.
  */
 internal fun SharedPreferences.moveProfile(from: RuleGroup, to: RuleGroup) {
     val all = this.all
     edit {
-        VaultProfile.LEGACY_KEYS.forEach { key ->
+        (VaultProfile.LEGACY_KEYS + VaultProfile.KEY_COMMON_STALE + VaultProfile.KEY_SYNC_ERROR).forEach { key ->
             val source = "${from.wireName}.$key"
             val target = "${to.wireName}.$key"
             when (val value = all[source]) {

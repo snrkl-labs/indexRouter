@@ -85,6 +85,12 @@ data class RoutingRule(
      * evaluates the other trigger's rules.
      */
     val group: RuleGroup = RuleGroup.COMMON,
+    /**
+     * The one gesture this rule answers, or null for either. With a vault per
+     * gesture, a vault's own rules leave this null: their vault already says
+     * which gesture they answer.
+     */
+    val gesture: RuleGroup? = null,
 )
 
 /**

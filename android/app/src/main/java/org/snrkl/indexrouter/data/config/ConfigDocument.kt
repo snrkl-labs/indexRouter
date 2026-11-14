@@ -10,7 +10,7 @@ import org.snrkl.indexrouter.routing.CalendarMode
 /**
  * One vault's config file, decoded.
  *
- * Format `00.05.00` (see [ConfigVersion]). Each vault holds its own file, and
+ * Format `00.06.00` (see [ConfigVersion]). Each vault holds its own file, and
  * it describes that vault and nothing else:
  *
  * - [layout]: how the vault is filed — base folder, reserved folders, date
@@ -117,8 +117,11 @@ data class ConfigVersion(val major: Int, val minor: Int, val patch: Int) : Compa
     override fun toString(): String = text
 
     companion object {
-        /** What this build writes. */
-        val CURRENT = ConfigVersion(0, 5, 0)
+        /**
+         * What this build writes. `00.06.00` added a `gesture` to each rule;
+         * a `00.05.00` file has none, which reads as `any`.
+         */
+        val CURRENT = ConfigVersion(0, 6, 0)
 
         /** The first format with one file per vault and a `common` block. */
         val PER_VAULT = ConfigVersion(0, 5, 0)
@@ -320,8 +323,23 @@ data class RuleBlock(
      * left as content.
      */
     @SerialName("strip-keyword") val stripKeyword: Boolean = true,
+    /**
+     * `any`, `single-click-hold` or `double-click-hold`: the one gesture this
+     * rule answers. Missing means `any`, so a file from before `00.06.00`
+     * reads unchanged. With a vault per gesture, a vault's own rules say
+     * `any`, because the vault already decides which gesture they answer.
+     */
+    val gesture: String = GESTURE_ANY,
 ) {
     /** The keywords, whichever format the file used. */
     fun allKeywords(): List<String> =
         (keywords + listOfNotNull(keyword)).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+
+    /** The gesture as a group, or null for `any` and anything this build does not know. */
+    fun gestureGroup(): org.snrkl.indexrouter.routing.RuleGroup? =
+        org.snrkl.indexrouter.routing.RuleGroup.fromWire(gesture)?.takeIf { it.isTrigger }
+
+    companion object {
+        const val GESTURE_ANY = "any"
+    }
 }

@@ -86,6 +86,7 @@ internal fun TriggersScreen(
     onChooseVault: () -> Unit,
     onChooseBaseFolder: () -> Unit,
     onOpenFileAccess: () -> Unit,
+    onOpenSettings: () -> Unit,
     hasAllFilesAccess: () -> Boolean,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -117,6 +118,95 @@ internal fun TriggersScreen(
         )
     }
 
+    @Composable
+    fun VaultCard(border: Color) {
+        // The vault is granted, not chosen, so it takes the outlined card
+        // the rules screen uses for the things that are not choices. Its
+        // border, and the two cards after it, wear the gesture's colour:
+        // everything down to the end of Tasks belongs to that gesture.
+        OutlinedCard(border = border) {
+            Text(
+                text = stringResource(R.string.settings_group_vault),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            if (!state.perGesture) {
+                Text(
+                    text = stringResource(R.string.triggers_both_file_here),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            if (state.loaded && !state.vaultAssigned) {
+                Text(
+                    text = stringResource(
+                        if (state.perGesture) R.string.settings_vault_unassigned else R.string.settings_vault_unassigned_one,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            if (state.perGesture && !state.vaultAssigned && state.carriedOverPath != null) {
+                FilledTonalButton(
+                    onClick = viewModel::useCarriedOver,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.settings_use_carried_over,
+                            state.carriedOverPath.orEmpty().substringAfterLast('/'),
+                            state.groupNames[state.group] ?: state.group.defaultName,
+                        ),
+                    )
+                }
+            }
+            // The pill holds the vault's own name; a full path does not fit
+            // on one line and was being cut to its least useful part.
+            CardValueRow(
+                label = stringResource(R.string.settings_vault_root),
+                value = when (state.storageMode) {
+                    StorageMode.FILES -> state.vaultRoot?.trimEnd('/')?.substringAfterLast('/')
+                        ?: stringResource(R.string.vault_root_unset)
+                    StorageMode.SAF -> stringResource(R.string.settings_vault_saf)
+                },
+                onClick = onChooseVault,
+                note = state.vaultRoot.takeIf { state.storageMode == StorageMode.FILES },
+            )
+            CardValueRow(
+                label = stringResource(R.string.settings_base_folder),
+                value = state.baseDir.ifBlank { stringResource(R.string.settings_base_is_root) },
+                onClick = onChooseBaseFolder,
+            )
+            // Storage Scopes grants access without "all files", so the
+            // permission alone says nothing; a vault whose folders all
+            // proved writable has access, whatever granted it.
+            val accessProven = state.requirements.isNotEmpty() && state.requirements.all { it.satisfied }
+            val accessMissing = state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess && !accessProven
+            CardValueRow(
+                label = stringResource(R.string.settings_file_access),
+                value = if (accessMissing) {
+                    stringResource(R.string.settings_file_access_missing)
+                } else {
+                    stringResource(R.string.settings_file_access_granted)
+                },
+                onClick = onOpenFileAccess,
+                note = if (accessMissing) {
+                    stringResource(R.string.vault_needs_all_files)
+                } else {
+                    null
+                },
+            )
+            FolderChecklist(state)
+            if (state.vaultAssigned) {
+                TextButton(onClick = viewModel::unassignVault) {
+                    Text(stringResource(R.string.action_unassign_vault))
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -139,110 +229,72 @@ internal fun TriggersScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.triggers_intro),
+                text = stringResource(if (state.perGesture) R.string.triggers_intro else R.string.triggers_intro_one),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            IdentityCard(
-                name = state.groupNames[RuleGroup.COMMON] ?: RuleGroup.COMMON.defaultName,
-                subtitle = stringResource(R.string.group_common_sub),
-                seed = state.groupSeeds[RuleGroup.COMMON] ?: GroupPalette.defaultSeed(RuleGroup.COMMON),
-                color = groupColors[RuleGroup.COMMON],
-                onRename = { renaming = RuleGroup.COMMON },
-                onRecolour = { recolouring = RuleGroup.COMMON },
-            )
-
-            GestureSelector(
-                selected = state.group,
-                names = state.groupNames,
-                colors = groupColors,
-                onSelect = viewModel::selectGroup,
-            )
-
-            IdentityCard(
-                name = state.groupNames[state.group] ?: state.group.defaultName,
-                subtitle = stringResource(R.string.triggers_gesture_sub, state.group.wireName),
-                seed = state.groupSeeds[state.group] ?: GroupPalette.defaultSeed(state.group),
-                color = gestureColor,
-                onRename = { renaming = state.group },
-                onRecolour = { recolouring = state.group },
-            )
-
-            // The vault is granted, not chosen, so it takes the outlined card
-            // the rules screen uses for the things that are not choices. Its
-            // border, and the two cards after it, wear the gesture's colour:
-            // everything down to the end of Tasks belongs to that gesture.
-            OutlinedCard(border = gestureColor?.accent ?: MaterialTheme.colorScheme.outline) {
+            // How the gestures map onto vaults is set in one place, Settings,
+            // and stated here so this screen is never read without it.
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = stringResource(R.string.settings_group_vault),
+                    text = stringResource(
+                        if (state.perGesture) R.string.triggers_mode_per_gesture else R.string.triggers_mode_one,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.triggers_change_in_settings)) }
+            }
+
+            if (state.perGesture) {
+                IdentityCard(
+                    name = state.groupNames[RuleGroup.COMMON] ?: RuleGroup.COMMON.defaultName,
+                    subtitle = stringResource(R.string.group_common_sub),
+                    seed = state.groupSeeds[RuleGroup.COMMON] ?: GroupPalette.defaultSeed(RuleGroup.COMMON),
+                    color = groupColors[RuleGroup.COMMON],
+                    onRename = { renaming = RuleGroup.COMMON },
+                    onRecolour = { recolouring = RuleGroup.COMMON },
+                )
+
+                GestureSelector(
+                    selected = state.group,
+                    names = state.groupNames,
+                    colors = groupColors,
+                    onSelect = viewModel::selectGroup,
+                )
+
+                IdentityCard(
+                    name = state.groupNames[state.group] ?: state.group.defaultName,
+                    subtitle = stringResource(R.string.triggers_gesture_sub, state.group.wireName),
+                    seed = state.groupSeeds[state.group] ?: GroupPalette.defaultSeed(state.group),
+                    color = gestureColor,
+                    onRename = { renaming = state.group },
+                    onRecolour = { recolouring = state.group },
+                )
+
+                VaultCard(gestureColor?.accent ?: MaterialTheme.colorScheme.outline)
+            } else {
+                // One vault: it belongs to neither gesture, so it comes first
+                // and in neither colour. The gestures follow, for their names
+                // and colours, which rules limited to one still use.
+                VaultCard(MaterialTheme.colorScheme.outline)
+                Text(
+                    text = stringResource(R.string.triggers_gestures_heading),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 4.dp),
+                    modifier = Modifier.padding(top = 8.dp),
                 )
-                if (!state.vaultAssigned) {
-                    Text(
-                        text = stringResource(R.string.settings_vault_unassigned),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 4.dp),
+                RuleGroup.TRIGGERS.forEach { g ->
+                    IdentityCard(
+                        name = state.groupNames[g] ?: g.defaultName,
+                        subtitle = stringResource(R.string.triggers_gesture_sub_one, g.wireName),
+                        seed = state.groupSeeds[g] ?: GroupPalette.defaultSeed(g),
+                        color = groupColors[g],
+                        onRename = { renaming = g },
+                        onRecolour = { recolouring = g },
                     )
-                }
-                if (!state.vaultAssigned && state.carriedOverPath != null) {
-                    FilledTonalButton(
-                        onClick = viewModel::useCarriedOver,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            stringResource(
-                                R.string.settings_use_carried_over,
-                                state.carriedOverPath.orEmpty().substringAfterLast('/'),
-                                state.groupNames[state.group] ?: state.group.defaultName,
-                            ),
-                        )
-                    }
-                }
-                // The pill holds the vault's own name; a full path does not fit
-                // on one line and was being cut to its least useful part.
-                CardValueRow(
-                    label = stringResource(R.string.settings_vault_root),
-                    value = when (state.storageMode) {
-                        StorageMode.FILES -> state.vaultRoot?.trimEnd('/')?.substringAfterLast('/')
-                            ?: stringResource(R.string.vault_root_unset)
-                        StorageMode.SAF -> stringResource(R.string.settings_vault_saf)
-                    },
-                    onClick = onChooseVault,
-                    note = state.vaultRoot.takeIf { state.storageMode == StorageMode.FILES },
-                )
-                CardValueRow(
-                    label = stringResource(R.string.settings_base_folder),
-                    value = state.baseDir.ifBlank { stringResource(R.string.settings_base_is_root) },
-                    onClick = onChooseBaseFolder,
-                )
-                // Storage Scopes grants access without "all files", so the
-                // permission alone says nothing; a vault whose folders all
-                // proved writable has access, whatever granted it.
-                val accessProven = state.requirements.isNotEmpty() && state.requirements.all { it.satisfied }
-                val accessMissing = state.storageMode == StorageMode.FILES && !state.hasAllFilesAccess && !accessProven
-                CardValueRow(
-                    label = stringResource(R.string.settings_file_access),
-                    value = if (accessMissing) {
-                        stringResource(R.string.settings_file_access_missing)
-                    } else {
-                        stringResource(R.string.settings_file_access_granted)
-                    },
-                    onClick = onOpenFileAccess,
-                    note = if (accessMissing) {
-                        stringResource(R.string.vault_needs_all_files)
-                    } else {
-                        null
-                    },
-                )
-                FolderChecklist(state)
-                if (state.vaultAssigned) {
-                    TextButton(onClick = viewModel::unassignVault) {
-                        Text(stringResource(R.string.action_unassign_vault))
-                    }
                 }
             }
 

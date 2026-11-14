@@ -5,8 +5,8 @@
 An Android companion for the **Pebble Index 01** ring. Click-hold or
 double-click-hold the ring, say what you want, and indexRouter files it where
 it belongs: a note in your Obsidian vault, a task, a timer, a calendar event,
-or text for your keyboard to type. Each gesture can file into a vault of its
-own.
+or text for your keyboard to type. Both gestures can file into one vault, or
+each into a vault of its own.
 
 <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22org.snrkl.indexrouter%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fsnrkl-labs%2FindexRouter%22%2C%22author%22%3A%22snrkl-labs%22%2C%22name%22%3A%22indexRouter%22%7D"><img src="assets/badge_obtainium.png" alt="Get it on Obtainium" width="161"></a>
 
@@ -17,7 +17,7 @@ the opening words against a keyword routing table you edit, and acts on it.
 **Everything stays on the phone.** The receiver binds `127.0.0.1` only, every
 request must carry a shared secret, and nothing is sent anywhere else.
 
-<img src="screenshots/main.png" width="240" alt="Main screen: receiver running, and each gesture with its vault and when it last synced"> <img src="screenshots/triggers.png" width="240" alt="Triggers: the click-hold gesture's name, colour, vault and the folders it needs"> <img src="screenshots/routing-log.png" width="240" alt="The routing log: what was said, which gesture sent it, which vault it went to, and where it landed">
+<img src="screenshots/main.png" width="240" alt="Main screen: receiver running, and each gesture with its vault and when it last synced"> <img src="screenshots/triggers.png" width="240" alt="Vaults and gestures: the click-hold gesture's name, colour, vault and the folders it needs"> <img src="screenshots/routing-log.png" width="240" alt="The routing log: what was said, which gesture sent it, which vault it went to, and where it landed">
 
 ## What it can do with a recording
 
@@ -36,25 +36,31 @@ with a notification, so a recording is never lost silently.
 
 <img src="screenshots/rules.png" width="240" alt="Routing rules: the common rules, then each gesture's own, in its colour"> <img src="screenshots/rule-expanded.png" width="240" alt="A rule opened up: folder, keywords, tags and keyword stripping"> <img src="screenshots/run-order.png" width="240" alt="Run order: the rules a click-hold recording is checked against, top to bottom">
 
-## Two gestures, two vaults
+## Two gestures, one vault or two
 
-Click-hold and double-click-hold are separate **triggers**. Each one has:
+Click-hold and double-click-hold each have **a name and a colour**, used on
+the rules screen, the routing log, the Pebble setup steps and notifications,
+so you can tell at a glance which gesture did what.
 
-- **its own vault**, and the folder inside it the app writes into;
-- **its own rules** for files and tasks, and its own inbox for anything
-  unmatched;
-- **a name and a colour**, used on the rules screen, the routing log, the
-  Pebble setup steps and its notifications, so you can tell at a glance which
-  gesture did what.
+**One vault** is the default. Both gestures file into it, there is one list
+of rules and one inbox, and any rule can be **limited to one gesture**: say
+"idea" after a click-hold and it goes to `Ideas`, say it after a
+double-click-hold and it goes to `Blog`.
 
-Timer, calendar and dictation rules need no vault, so they are **common**: one
-set, used by both gestures. **Run order** on the rules screen shows exactly
-which rules a recording from either gesture is checked against, and in what
-order, using the same code that does the routing.
+**A vault per gesture** is a switch, the first item in Settings. Turned on,
+each gesture files into its own vault, with its own file and task rules and
+its own inbox. Timer, calendar and dictation rules need no vault, so they stay
+**common** to both, and can still be limited to one gesture. Turning the
+switch on or off walks through which vault is kept and where the rules go,
+and deletes nothing in either vault.
 
-A recording is never written to the other gesture's vault. If a gesture's
-vault cannot be reached, nothing is written anywhere and the Pebble app is
-asked to resend, so the recording arrives once the vault is back.
+**Run order** on the rules screen shows exactly which rules a recording from
+either gesture is checked against, and in what order, using the same code
+that does the routing.
+
+A recording is never written to a vault its gesture does not file into. If
+that vault cannot be reached, nothing is written anywhere and the Pebble app
+is asked to resend, so the recording arrives once the vault is back.
 
 <img src="screenshots/colour.png" width="240" alt="Choosing a gesture's colour, with a preview of how it looks in light and dark themes"> <img src="screenshots/pebble-setup.png" width="240" alt="Pebble setup: the URL and secret, then each gesture's steps, and when it last sent a recording (the secret shown is a throwaway)">
 
@@ -83,14 +89,14 @@ asked to resend, so the recording arrives once the vault is back.
 Gesture colours are adjusted for each theme, so they stay readable whichever
 you use and sit with your wallpaper's colours where Android provides them.
 
-<img src="screenshots/main-dark.png" width="240" alt="Main screen in the dark theme"> <img src="screenshots/triggers-dark.png" width="240" alt="Triggers in the dark theme"> <img src="screenshots/routing-log-dark.png" width="240" alt="The routing log in the dark theme">
+<img src="screenshots/main-dark.png" width="240" alt="Main screen in the dark theme"> <img src="screenshots/triggers-dark.png" width="240" alt="Vaults and gestures in the dark theme"> <img src="screenshots/routing-log-dark.png" width="240" alt="The routing log in the dark theme">
 
 ## Requirements
 
 - Android 10 or later.
 - A **Pebble Index 01** and the Pebble app, with its webhook feature.
 - An **Obsidian vault** in ordinary shared storage, not Obsidian's app-private
-  folder. Two, if you want each gesture to file separately.
+  folder. Two, if you want each gesture to file into its own.
 - Optional: a clock app that handles `SET_TIMER`, a calendar app, and a
   keyboard whose mic key can switch to another voice input method (HeliBoard
   does).
@@ -133,14 +139,14 @@ will not update across signing keys. Uninstall the old build first.
 
 1. **Generate a webhook secret** in the app. It is stored encrypted under an
    Android Keystore key, and shown in **Pebble app setup** so you can copy it.
-2. **Choose a vault for each gesture.** Open **Triggers**, pick the gesture,
-   then choose its vault and the folder inside it the app writes into
-   (`_RingRing` by default; it may be nested, such as `Inbox/_RingRing`). The
-   checklist below shows the folders your rules need. A gesture with no vault
-   files nothing, so leave one unassigned if you only use the other. Name and
-   colour each gesture here too, if you like.
-3. **In the Pebble app**, follow the steps **Pebble app setup** shows for each
-   gesture: set the ring button gesture to *Webhook only*, then add a webhook
+2. **Choose a vault.** Open **Vaults & gestures**, then choose the vault and
+   the folder inside it the app writes into (`_RingRing` by default; it may be
+   nested, such as `Inbox/_RingRing`). The checklist below shows the folders
+   your rules need. Name and colour each gesture here too, if you like. For a
+   vault per gesture, turn on **A vault per gesture** in Settings and choose
+   the second gesture's vault the same way.
+3. **In the Pebble app**, follow the steps **Pebble app setup** shows for
+   whichever gestures you want to use: set the ring button gesture to *Webhook only*, then add a webhook
    entry with that gesture as its trigger, `http://127.0.0.1:8787/webhook` as
    the URL, an `Authorization` header with the secret as its value, and
    *Recording + Transcription* as the payload. The dialog then shows when each
